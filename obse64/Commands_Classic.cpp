@@ -843,6 +843,78 @@ static void InstallMagicMenuHooks()
 	g_branchTrampoline.write5Call(kMagicMenu_ConstructCall.getUIntPtr(), uintptr_t(MagicMenu_Construct_Hook));
 }
 
+// GetGameLoaded is 1 the first time each script asks after a save is loaded or a new game starts,
+// and, as in classic, the first time after the game itself starts. The game's loader (0x0670FA80)
+// opens the save with 0x06715190 and gives up if that fails. A new game closes the main menu
+// (0x065DE980) from both of its starts, after the confirmation (0x065DEA90) or without one
+// (0x065DEC40), once it has found the character generation quest.
+typedef void * (* _SaveLoad_OpenSave)(void * saveLoad, void * unk, const char * name, s32 unk2);
+static RelocAddr <_SaveLoad_OpenSave> SaveLoad_OpenSave(0x06715190);
+static RelocAddr <uintptr_t> kLoadGame_OpenSaveCall(0x0670FB9C);
+
+typedef void (* _MainMenu_Close)();
+static RelocAddr <_MainMenu_Close> MainMenu_Close(0x065DE980);
+static RelocAddr <uintptr_t> kNewGame_CloseMainMenuCall(0x065DEB5F);
+static RelocAddr <uintptr_t> kNewGameUnconfirmed_CloseMainMenuCall(0x065DEDA7);
+
+static bool s_gameLoaded = false;
+
+static void * SaveLoad_OpenSave_Hook(void * saveLoad, void * unk, const char * name, s32 unk2)
+{
+	void * save = SaveLoad_OpenSave(saveLoad, unk, name, unk2);
+	if(save)
+		s_gameLoaded = true;
+
+	return save;
+}
+
+static void MainMenu_Close_NewGame_Hook()
+{
+	s_gameLoaded = true;
+
+	MainMenu_Close();
+}
+
+static void InstallGameLoadedHooks()
+{
+	uintptr_t openSave = SaveLoad_OpenSave.getUIntPtr();
+	uintptr_t closeMainMenu = MainMenu_Close.getUIntPtr();
+
+	if(!IsCallTo(kLoadGame_OpenSaveCall.getUIntPtr(), openSave) ||
+		!IsCallTo(kNewGame_CloseMainMenuCall.getUIntPtr(), closeMainMenu) ||
+		!IsCallTo(kNewGameUnconfirmed_CloseMainMenuCall.getUIntPtr(), closeMainMenu))
+	{
+		_ERROR("the game's load and new game calls aren't where expected; GetGameLoaded will only report the game starting");
+		return;
+	}
+
+	g_branchTrampoline.write5Call(kLoadGame_OpenSaveCall.getUIntPtr(), uintptr_t(SaveLoad_OpenSave_Hook));
+	g_branchTrampoline.write5Call(kNewGame_CloseMainMenuCall.getUIntPtr(), uintptr_t(MainMenu_Close_NewGame_Hook));
+	g_branchTrampoline.write5Call(kNewGameUnconfirmed_CloseMainMenuCall.getUIntPtr(), uintptr_t(MainMenu_Close_NewGame_Hook));
+}
+
+static bool Cmd_GetGameLoaded_Execute(COMMAND_ARGS)
+{
+	static std::set <u32> s_informed;	// script form IDs told since the last load
+
+	*result = 0;
+
+	if(s_gameLoaded)
+	{
+		s_informed.clear();
+		s_gameLoaded = false;
+	}
+
+	// Script derives from TESForm
+	if(script && s_informed.insert(reinterpret_cast <TESForm *>(script)->refID).second)
+		*result = 1;
+
+	if(IsConsoleMode())
+		Console_Print("GetGameLoaded >> %d", (int)*result);
+
+	return true;
+}
+
 // debug output, switched on per mod by SetDebugMode
 static u32 s_modDebugStates[8];
 
@@ -1433,6 +1505,16 @@ static CommandInfo kCommandInfo_GetActiveMenuSelection =
 	Cmd_GetActiveMenuSelection_Execute
 };
 
+static CommandInfo kCommandInfo_GetGameLoaded =
+{
+	"GetGameLoaded", "",
+	0,
+	"returns 1 the first time the calling script asks after a game is loaded",
+	0,
+	0, nullptr,
+	Cmd_GetGameLoaded_Execute
+};
+
 struct PortedCommand
 {
 	const CommandInfo	* info;
@@ -1466,6 +1548,7 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_SaveIP,			kRetnType_Default },
 	{ &kCommandInfo_RestoreIP,		kRetnType_Default },
 	{ &kCommandInfo_GetActiveMenuSelection,	kRetnType_Form },
+	{ &kCommandInfo_GetGameLoaded,	kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },
@@ -1582,4 +1665,5 @@ void AddClassicCommands()
 	_MESSAGE("classic commands %04X-%04X added, %d ported", first.opcode, last.opcode, numPorted);
 
 	InstallMagicMenuHooks();
+	InstallGameLoadedHooks();
 }
