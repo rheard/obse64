@@ -1848,6 +1848,118 @@ static bool Cmd_MessageBoxEX_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// The console runs a typed line as classic's RunScriptLine did (0x06555280): a temporary script
+// (built by 0x0662E4F0, marked temporary by 0x06612830) takes the line as its text (0x066315B0)
+// and is compiled and run (0x0662EBE0) by the compiler at the start of the console manager (from
+// 0x066331E0), then destroyed (0x0662E5A0). A line that doesn't compile leaves the script without
+// bytecode: its length at +0x38 stays 0. Running it sets and clears the console mode flag.
+typedef void (* _Script_Construct)(void * script);
+static RelocAddr <_Script_Construct> Script_Construct(0x0662E4F0);
+
+typedef void (* _Script_MarkAsTemporary)(void * script);
+static RelocAddr <_Script_MarkAsTemporary> Script_MarkAsTemporary(0x06612830);
+
+typedef void (* _Script_SetText)(void * script, const char * text);
+static RelocAddr <_Script_SetText> Script_SetText(0x066315B0);
+
+typedef void (* _Script_CompileAndRun)(void * script, void * compiler, u32 compilerType, TESObjectREFR * callingObj);
+static RelocAddr <_Script_CompileAndRun> Script_CompileAndRun(0x0662EBE0);
+
+typedef void (* _Script_Destruct)(void * script);
+static RelocAddr <_Script_Destruct> Script_Destruct(0x0662E5A0);
+
+typedef void ** (* _ConsoleManager_Get)(bool create);
+static RelocAddr <_ConsoleManager_Get> ConsoleManager_Get(0x066331E0);
+
+enum
+{
+	kScriptCompiler_Console =	1,
+
+	kScriptOffset_DataLength =	0x38,
+	kScriptBufferSize =			0x100,	// the console keeps its script in 0x98 bytes
+};
+
+// compiles and runs one line as the console does; false if it didn't compile
+static bool RunScriptLine(const char * text, TESObjectREFR * callingObj)
+{
+	void ** consoleManager = ConsoleManager_Get(true);
+	if(!consoleManager || !*consoleManager) return false;
+
+	alignas(16) u8 scriptBuf[kScriptBufferSize];
+	u8 consoleMode = *g_bConsoleMode;
+
+	Script_Construct(scriptBuf);
+	Script_MarkAsTemporary(scriptBuf);
+	Script_SetText(scriptBuf, text);
+	Script_CompileAndRun(scriptBuf, *consoleManager, kScriptCompiler_Console, callingObj);
+	bool compiled = *(const u32 *)(scriptBuf + kScriptOffset_DataLength) != 0;
+	Script_Destruct(scriptBuf);
+
+	*g_bConsoleMode = consoleMode;
+
+	return compiled;
+}
+
+static ParamInfo kParams_RunBatchScript[3] =
+{
+	{	"filename",			kParamType_String,	0 },
+	{	"run on ref",		kParamType_Integer,	1 },
+	{	"suppress output",	kParamType_Integer,	1 },
+};
+
+// Runs each line of a text file as a console command, as classic did. Classic opened the file
+// relative to Oblivion's folder, the one holding Data; the Remastered's is Content\Dev\ObvData,
+// two folders up from the exe's, and a path is tried there first. Blank lines and comments are
+// skipped instead of being compiled to nothing.
+static bool Cmd_RunBatchScript_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	char fileName[BUFSIZ] = { 0 };
+	u32 runOnRef = 0;
+	u32 suppressOutput = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &fileName, &runOnRef, &suppressOutput)) return true;
+
+	std::string inDataFolder = getRuntimeDirectory() + "..\\..\\Content\\Dev\\ObvData\\" + fileName;
+
+	FILE * src = nullptr;
+	if(fopen_s(&src, inDataFolder.c_str(), "r") && fopen_s(&src, fileName, "r"))
+	{
+		_MESSAGE("RunBatchScript: can't open %s", fileName);
+		return true;
+	}
+
+	*result = 1;
+
+	// classic printed what the lines print, unless asked not to
+	u8 outputEnabled = *g_bConsoleOutputEnabled;
+	*g_bConsoleOutputEnabled = suppressOutput ? 0 : 1;
+
+	char line[4096];
+	while(fgets(line, sizeof(line), src))
+	{
+		size_t len = strlen(line);
+		while(len && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+			line[--len] = 0;
+
+		const char * start = line;
+		while(*start == ' ' || *start == '\t')
+			start++;
+
+		if(!*start || *start == ';')
+			continue;
+
+		if(!RunScriptLine(start, runOnRef ? thisObj : nullptr))
+			*result = 0;
+	}
+
+	*g_bConsoleOutputEnabled = outputEnabled;
+
+	fclose(src);
+
+	return true;
+}
+
 // The game's script runner (0xC0 bytes, built by 0x0694C7C0). ScriptRunner::Run (0x0694D6D0) steps
 // through a script's statements and has 0x0694C810 run each one. The runner keeps the if/else
 // nesting: a depth, and for each level 1 while inside an if and 2 once one of its branches ran.
@@ -2044,6 +2156,16 @@ static CommandInfo kCommandInfo_MessageBoxEX =
 	Cmd_MessageBoxEX_Execute
 };
 
+static CommandInfo kCommandInfo_RunBatchScript =
+{
+	"RunBatchScript", "",
+	0,
+	"Similar to the 'bat' console command",
+	0,
+	3, kParams_RunBatchScript,
+	Cmd_RunBatchScript_Execute
+};
+
 static ParamInfo kParams_OneOptionalInt[1] =
 {
 	{	"int", kParamType_Integer, 1 },
@@ -2230,6 +2352,7 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_TestExpr,		kRetnType_Default },
 	{ &kCommandInfo_MessageEX,		kRetnType_Default },
 	{ &kCommandInfo_MessageBoxEX,	kRetnType_Default },
+	{ &kCommandInfo_RunBatchScript,	kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
