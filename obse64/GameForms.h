@@ -575,6 +575,13 @@ public:
 
 static_assert(sizeof(TESObjectCELL) == 0xD8);
 
+// 8
+struct TESObjectCELL::CellCoordinates
+{
+	s32	x;	// 0
+	s32	y;	// 4
+};
+
 // 38
 class EffectItem
 {

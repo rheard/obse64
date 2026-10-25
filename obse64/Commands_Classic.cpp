@@ -878,19 +878,26 @@ static RelocAddr <uintptr_t> kNewGame_CloseMainMenuCall(0x065DEB5F);
 static RelocAddr <uintptr_t> kNewGameUnconfirmed_CloseMainMenuCall(0x065DEDA7);
 
 static bool s_gameLoaded = false;
+static u32 s_gameLoadCount = 0;	// for anything that must not outlive the game it was made in
+
+static void OnGameLoaded()
+{
+	s_gameLoaded = true;
+	s_gameLoadCount++;
+}
 
 static void * SaveLoad_OpenSave_Hook(void * saveLoad, void * unk, const char * name, s32 unk2)
 {
 	void * save = SaveLoad_OpenSave(saveLoad, unk, name, unk2);
 	if(save)
-		s_gameLoaded = true;
+		OnGameLoaded();
 
 	return save;
 }
 
 static void MainMenu_Close_NewGame_Hook()
 {
-	s_gameLoaded = true;
+	OnGameLoaded();
 
 	MainMenu_Close();
 }
@@ -993,6 +1000,275 @@ static CommandInfo kCommandInfo_AddItemNS =
 	1,
 	2, kParams_AddItem,
 	Cmd_AddItemNS_Execute
+};
+
+// GetFirstRef and GetNextRef walk the references in the player's cell, and in an exterior the
+// cells around it to a given depth, one matching reference per call, as classic did. A cell keeps
+// its references in the list at +0xB8. An exterior cell (flag 1 of +0x79 clear) has its grid
+// coordinates at +0xA0, and its worldspace finds a neighbour by them (0x06720A00, which only looks
+// in the worldspace's map of cells, so a cell the game hasn't made yet is skipped, not made).
+typedef TESObjectCELL * (* _TESWorldSpace_LookupCell)(TESWorldSpace * world, s32 x, s32 y);
+static RelocAddr <_TESWorldSpace_LookupCell> TESWorldSpace_LookupCell(0x06720A00);
+
+enum
+{
+	// classic's form types for GetFirstRef beyond the game's own
+	kRefScanType_Any =			0,
+	kRefScanType_Actor =		69,
+	kRefScanType_Item =			70,
+	kRefScanType_Projectile =	71,
+	kRefScanType_MapMarker =	72,
+	kRefScanType_Deleted =		90,
+
+	kCellFlag0_Interior =	0x01,
+
+	kRefFlag_Unk02 =	0x02,	// set, along with deleted, on an item picked up from the world
+	kRefFlag_Deleted =	0x20,
+
+	kFormID_PlayerBase =	0x07,
+	kFormID_MapMarker =		0x10,
+};
+
+struct CellRefScan
+{
+	using Node = BSSimpleList <TESObjectREFR *>::Node;
+
+	TESWorldSpace	* world;		// set for an exterior scan of the cells around the player's
+	s32				centerX;
+	s32				centerY;
+	s32				depth;
+	s32				dx;				// the cell being walked, from the centre
+	s32				dy;
+	TESObjectCELL	* cell;			// the cell being walked, none when the scan is done
+	Node			* next;			// the next node of its list to look at
+	u32				formType;
+	bool			includeTaken;
+	bool			includeDeleted;
+	u32				gameLoadCount;	// a scan started before a load would walk cells that are gone
+};
+
+// one scan per script, as GetNextRef takes no arguments
+static std::map <u32, CellRefScan> s_cellRefScans;
+
+static bool RefMatchesScan(const CellRefScan & scan, TESObjectREFR * refr)
+{
+	TESForm * base = refr->baseForm;
+	if(!base) return false;
+
+	bool deleted = (refr->flags & kRefFlag_Deleted) != 0;
+	bool taken = (refr->flags & (kRefFlag_Deleted | kRefFlag_Unk02)) == (kRefFlag_Deleted | kRefFlag_Unk02);
+
+	switch(scan.formType)
+	{
+		case kRefScanType_Any:
+			return scan.includeTaken || !taken;
+
+		case kRefScanType_Actor:
+			if(deleted && !scan.includeDeleted) return false;
+
+			return (base->typeID == kFormType_Creature) ||
+				(base->typeID == kFormType_NPC && base->refID != kFormID_PlayerBase);
+
+		case kRefScanType_Item:
+			if(deleted && !scan.includeDeleted) return false;
+			if(taken && !scan.includeTaken) return false;
+
+			switch(base->typeID)
+			{
+				case kFormType_Apparatus:
+				case kFormType_Armor:
+				case kFormType_Book:
+				case kFormType_Clothing:
+				case kFormType_Ingredient:
+				case kFormType_Misc:
+				case kFormType_Weapon:
+				case kFormType_Ammo:
+				case kFormType_SoulGem:
+				case kFormType_Key:
+				case kFormType_AlchemyItem:
+				case kFormType_SigilStone:
+					return true;
+
+				case kFormType_Light:
+				{
+					auto * light = DYNAMIC_CAST(base, TESForm, TESObjectLIGH);
+					return light && light->IsCarriable();
+				}
+			}
+
+			return false;
+
+		case kRefScanType_Projectile:
+			// classic only finds projectiles for the commands that name their shooter
+			return false;
+
+		case kRefScanType_MapMarker:
+			return (!deleted || scan.includeDeleted) && base->refID == kFormID_MapMarker;
+
+		case kRefScanType_Deleted:
+			return deleted;
+
+		default:
+			if(deleted && !scan.includeDeleted) return false;
+			if(taken && !scan.includeTaken) return false;
+
+			return base->typeID == scan.formType && base->refID != kFormID_PlayerBase;
+	}
+}
+
+static void WalkCell(CellRefScan & scan, TESObjectCELL * cell)
+{
+	scan.cell = cell;
+	scan.next = &cell->objectList.node;
+}
+
+// on to the next cell of the square around the centre that the game has made, row by row
+static void NextScanCell(CellRefScan & scan)
+{
+	scan.cell = nullptr;
+	scan.next = nullptr;
+
+	if(!scan.world) return;
+
+	for(;;)
+	{
+		if(++scan.dx > scan.depth)
+		{
+			scan.dx = -scan.depth;
+			if(++scan.dy > scan.depth) return;
+		}
+
+		if(TESObjectCELL * cell = TESWorldSpace_LookupCell(scan.world, scan.centerX + scan.dx, scan.centerY + scan.dy))
+		{
+			WalkCell(scan, cell);
+			return;
+		}
+	}
+}
+
+static void StartCellRefScan(CellRefScan & scan, TESObjectCELL * cell, u32 formType, u32 depth, bool includeTaken, bool includeDeleted)
+{
+	scan = CellRefScan();
+	scan.formType = formType;
+	scan.includeTaken = includeTaken;
+	scan.includeDeleted = includeDeleted;
+	scan.gameLoadCount = s_gameLoadCount;
+
+	if(!(cell->flags0 & kCellFlag0_Interior) && cell->worldSpace && cell->coords && depth)
+	{
+		scan.world = cell->worldSpace;
+		scan.centerX = cell->coords->x;
+		scan.centerY = cell->coords->y;
+		scan.depth = s32(depth > 0xFF ? 0xFF : depth);	// classic kept the depth in a byte
+		scan.dx = -scan.depth - 1;
+		scan.dy = -scan.depth;
+
+		NextScanCell(scan);
+	}
+	else
+		WalkCell(scan, cell);
+}
+
+// The next matching reference, none once the scan is done. Like classic, the scan keeps its place
+// in a cell's list between calls, which suits a loop that runs within one frame.
+static TESObjectREFR * ContinueCellRefScan(CellRefScan & scan)
+{
+	while(scan.cell)
+	{
+		while(scan.next)
+		{
+			CellRefScan::Node * node = scan.next;
+			scan.next = node->m_next;
+
+			if(node->m_data && RefMatchesScan(scan, node->m_data))
+				return node->m_data;
+		}
+
+		NextScanCell(scan);
+	}
+
+	return nullptr;
+}
+
+static ParamInfo kParams_GetFirstRef[4] =
+{
+	{	"form type",			kParamType_Integer,	1 },
+	{	"cell depth",			kParamType_Integer,	1 },
+	{	"include taken refs",	kParamType_Integer,	1 },
+	{	"include deleted refs",	kParamType_Integer,	1 },
+};
+
+static bool Cmd_GetFirstRef_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 formType = 0;
+	u32 depth = 0;
+	u32 includeTaken = 0;
+	u32 includeDeleted = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &formType, &depth, &includeTaken, &includeDeleted)) return true;
+
+	PlayerCharacter * player = PlayerCharacter::Get();
+	if(!script || !player || !player->parentCell) return true;
+
+	// Script derives from TESForm
+	u32 scriptID = reinterpret_cast <TESForm *>(script)->refID;
+
+	CellRefScan & scan = s_cellRefScans[scriptID];
+	StartCellRefScan(scan, player->parentCell, formType, depth, includeTaken != 0, includeDeleted != 0);
+
+	TESObjectREFR * refr = ContinueCellRefScan(scan);
+	if(refr)
+		SetFormResult(result, refr->refID);
+	else
+		s_cellRefScans.erase(scriptID);
+
+	if(IsConsoleMode())
+		Console_Print("GetFirstRef >> %08X", refr ? refr->refID : 0);
+
+	return true;
+}
+
+static bool Cmd_GetNextRef_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!script) return true;
+
+	// Script derives from TESForm
+	auto scan = s_cellRefScans.find(reinterpret_cast <TESForm *>(script)->refID);
+	if(scan == s_cellRefScans.end()) return true;
+
+	TESObjectREFR * refr = (scan->second.gameLoadCount == s_gameLoadCount) ? ContinueCellRefScan(scan->second) : nullptr;
+	if(refr)
+		SetFormResult(result, refr->refID);
+	else
+		s_cellRefScans.erase(scan);
+
+	if(IsConsoleMode())
+		Console_Print("GetNextRef >> %08X", refr ? refr->refID : 0);
+
+	return true;
+}
+
+static CommandInfo kCommandInfo_GetFirstRef =
+{
+	"GetFirstRef", "",
+	0,
+	"returns the first reference of the specified type in the current cell",
+	0,
+	4, kParams_GetFirstRef,
+	Cmd_GetFirstRef_Execute
+};
+
+static CommandInfo kCommandInfo_GetNextRef =
+{
+	"GetNextRef", "",
+	0,
+	"returns the next reference of a given type in the current cell",
+	0,
+	0, nullptr,
+	Cmd_GetNextRef_Execute
 };
 
 // debug output, switched on per mod by SetDebugMode
@@ -1630,6 +1906,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetActiveMenuSelection,	kRetnType_Form },
 	{ &kCommandInfo_GetGameLoaded,	kRetnType_Default },
 	{ &kCommandInfo_AddItemNS,		kRetnType_Default },
+	{ &kCommandInfo_GetFirstRef,	kRetnType_Form },
+	{ &kCommandInfo_GetNextRef,		kRetnType_Form },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },
