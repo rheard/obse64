@@ -275,6 +275,95 @@ static bool Cmd_GetParentCellOwningFactionRequiredRank_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// The game's check of whether taking or using a reference is a crime for the player (classic
+// TESObjectREFR::IsOffLimitsToPlayer): ownership, the player's faction ranks, rented-room globals
+// and doors' own rules. The crosshair uses it to say "Steal" (0x06765C00).
+typedef bool (* _IsOffLimitsToPlayer)(TESObjectREFR * refr);
+static RelocAddr <_IsOffLimitsToPlayer> IsOffLimitsToPlayer(0x06582560);
+
+static bool Cmd_IsOffLimits_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESForm * actor = nullptr;
+	if(!thisObj || !ExtractArgs(EXTRACT_ARGS, &actor)) return true;
+
+	PlayerCharacter * player = PlayerCharacter::Get();
+	if(actor && (!player || actor != player->baseForm))
+	{
+		// classic works out another actor's crimes itself, from its factions: not ported yet, so
+		// fail the line, as an unported command does, rather than answer wrongly
+		static bool s_reported = false;
+		if(!s_reported)
+		{
+			s_reported = true;
+			_MESSAGE("IsOffLimits for an actor other than the player is not implemented yet");
+		}
+
+		return false;
+	}
+
+	if(IsOffLimitsToPlayer(thisObj))
+		*result = 1;
+
+	if(IsConsoleMode())
+		Console_Print("IsOffLimits >> %d", (int)*result);
+
+	return true;
+}
+
+// The game's value of an item, what a theft's bounty is worked out from (0x06955040): the value
+// component's for most items, and for potions and ingredients their magic item's, which works out
+// an autocalc potion's value. -1 for a form with no value.
+typedef s32 (* _GetItemValue)(TESForm * form);
+static RelocAddr <_GetItemValue> GetItemValue(0x067D6A20);
+
+static bool Cmd_GetGoldValue_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESForm * form = nullptr;
+	if(!ExtractArgs(EXTRACT_ARGS, &form)) return true;
+
+	form = FormArgOrBase(form, thisObj);
+	if(form)
+	{
+		s32 value = GetItemValue(form);
+		if(value > 0)
+			*result = value;
+	}
+
+	if(IsConsoleMode())
+		Console_Print("GetGoldValue >> %d", (int)*result);
+
+	return true;
+}
+
+static ParamInfo kParams_OneOptionalNPC[1] =
+{
+	{	"npc", kParamType_NPC, 1 },
+};
+
+static CommandInfo kCommandInfo_IsOffLimits =
+{
+	"IsOffLimits", "",
+	0,
+	"returns true if activating the calling reference would result in a crime for the actor",
+	1,
+	1, kParams_OneOptionalNPC,
+	Cmd_IsOffLimits_Execute
+};
+
+static CommandInfo kCommandInfo_GetGoldValue =
+{
+	"GetGoldValue", "",
+	0,
+	"returns the gold value of the object or calling reference",
+	0,
+	1, kParams_OneOptionalInventoryObject,
+	Cmd_GetGoldValue_Execute
+};
+
 static CommandInfo kCommandInfo_GetOwner =
 {
 	"GetOwner", "",
@@ -756,6 +845,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetParentCellOwner,	kRetnType_Form },
 	{ &kCommandInfo_GetOwningFactionRequiredRank,	kRetnType_Default },
 	{ &kCommandInfo_GetParentCellOwningFactionRequiredRank,	kRetnType_Default },
+	{ &kCommandInfo_IsOffLimits,	kRetnType_Default },
+	{ &kCommandInfo_GetGoldValue,	kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },
