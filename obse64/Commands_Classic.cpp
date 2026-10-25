@@ -935,6 +935,66 @@ static bool Cmd_GetGameLoaded_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// AddItem tells the player what was added with the game's message that has an icon (classic's
+// QueueUIMessage_2, 0x0656C3E0), called from 0x067DD888. AddItemNS runs the game's AddItem with
+// that message skipped, as classic did by making the message functions return at once.
+typedef bool (* _QueueUIMessageWithIcon)(void * message, float duration, const char * icon, void * sound, u8 unk);
+static RelocAddr <_QueueUIMessageWithIcon> QueueUIMessageWithIcon(0x0656C3E0);
+static RelocAddr <uintptr_t> kAddItem_MessageCall(0x067DD888);
+
+enum
+{
+	kOpcode_AddItem = 0x1002,
+};
+
+static u32 s_itemMessagesOff = 0;
+
+static bool AddItem_Message_Hook(void * message, float duration, const char * icon, void * sound, u8 unk)
+{
+	if(s_itemMessagesOff) return false;
+
+	return QueueUIMessageWithIcon(message, duration, icon, sound, unk);
+}
+
+static void InstallItemMessageHook()
+{
+	if(!IsCallTo(kAddItem_MessageCall.getUIntPtr(), QueueUIMessageWithIcon.getUIntPtr()))
+	{
+		_ERROR("AddItem's message call isn't where expected; AddItemNS will show the message");
+		return;
+	}
+
+	g_branchTrampoline.write5Call(kAddItem_MessageCall.getUIntPtr(), uintptr_t(AddItem_Message_Hook));
+}
+
+static bool Cmd_AddItemNS_Execute(COMMAND_ARGS)
+{
+	CommandInfo * addItem = GetCommandInfo(kOpcode_AddItem);
+	if(!addItem || !addItem->execute) return false;
+
+	s_itemMessagesOff++;
+	bool ok = addItem->execute(addItem->params, scriptData, thisObj, containingObj, script, locals, result, opcodeOffsetPtr);
+	s_itemMessagesOff--;
+
+	return ok;
+}
+
+static ParamInfo kParams_AddItem[2] =
+{
+	{	"item", kParamType_InventoryObject, 0 },
+	{	"quantity", kParamType_Integer, 0 },
+};
+
+static CommandInfo kCommandInfo_AddItemNS =
+{
+	"AddItemNS", "",
+	0,
+	"version of AddItem which doesn't generate UI messages",
+	1,
+	2, kParams_AddItem,
+	Cmd_AddItemNS_Execute
+};
+
 // debug output, switched on per mod by SetDebugMode
 static u32 s_modDebugStates[8];
 
@@ -1569,6 +1629,7 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_RestoreIP,		kRetnType_Default },
 	{ &kCommandInfo_GetActiveMenuSelection,	kRetnType_Form },
 	{ &kCommandInfo_GetGameLoaded,	kRetnType_Default },
+	{ &kCommandInfo_AddItemNS,		kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },
@@ -1687,4 +1748,5 @@ void AddClassicCommands()
 
 	InstallMagicMenuHooks();
 	InstallGameLoadedHooks();
+	InstallItemMessageHook();
 }
