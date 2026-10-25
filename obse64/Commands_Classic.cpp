@@ -11,8 +11,10 @@
 #include "ParamInfos.h"
 #include "obse64_common/Log.h"
 #include <cctype>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <intrin.h>
 #include <map>
 #include <set>
 #include <string>
@@ -853,6 +855,126 @@ static bool Cmd_TestExpr_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// The game's script runner (0xC0 bytes, built by 0x0694C7C0). ScriptRunner::Run (0x0694D6D0) steps
+// through a script's statements and has 0x0694C810 run each one. The runner keeps the if/else
+// nesting: a depth, and for each level 1 while inside an if and 2 once one of its branches ran.
+struct ScriptRunner
+{
+	u8		unk00[0x28];	// 00
+	Script	* script;		// 28 the script running, 0 when idle
+	u32		unk30;			// 30
+	u32		unk34;			// 34
+	s32		ifDepth;		// 38
+	u32		ifStack[10];	// 3C
+};
+
+static_assert(offsetof(ScriptRunner, script) == 0x28);
+static_assert(offsetof(ScriptRunner, ifDepth) == 0x38);
+static_assert(offsetof(ScriptRunner, ifStack) == 0x3C);
+
+// the runner Run's callers use, unless it's busy with another script (0x0694D580)
+static RelocPtr <ScriptRunner *> g_scriptRunner(0x094904E8);
+
+// Run moves to the next statement by adding the statement's length to its arguments' offset. It
+// passes the length to 0x0694C810 by pointer, as the fifth argument, which a command can change to
+// jump, as classic's Goto did. 0x0694C810 calls commands from 0x0694D179 with opcodeOffsetPtr at its
+// rsp + 0x40, and its fifth argument is at rsp + 0x800 (eight pushes, 0x798 of locals, the return
+// address and four home slots).
+static RelocAddr <uintptr_t> kStatementCommandReturn(0x0694D17C);
+static const u32 kNextStatementLengthOffset = 0x800 - 0x40;
+
+// where Label was, and the nesting there, by script and label
+struct SavedIP
+{
+	u32	ip;
+	s32	ifDepth;
+	u32	ifStack[10];
+};
+
+static std::map <std::pair <Script *, u32>, SavedIP> s_savedIPs;
+
+// The runner running this statement, and Run's length for it. False unless the command is a
+// statement of its own run by the main runner: not part of an expression, nor in a script that
+// another one started.
+static bool GetStatementState(void * returnAddress, Script * script, const char * scriptData, u32 argsOffset,
+	u32 * opcodeOffsetPtr, ScriptRunner ** runner, s32 ** length)
+{
+	if(uintptr_t(returnAddress) != kStatementCommandReturn.getUIntPtr()) return false;
+
+	*runner = *g_scriptRunner;
+	if(!*runner || (*runner)->script != script) return false;
+
+	// the length Run read, which is just before the arguments
+	*length = *(s32 **)((u8 *)opcodeOffsetPtr + kNextStatementLengthOffset);
+	return *length && **length == *(const s16 *)(scriptData + argsOffset - 2);
+}
+
+static void ReportUnfollowedJump(const char * name, Script * script)
+{
+	static bool s_reported = false;
+	if(!s_reported)
+	{
+		s_reported = true;
+		_MESSAGE("%s in script %08X ignored: it only works as a statement of its own, in a script the game runs itself",
+			name, script ? reinterpret_cast <TESForm *>(script)->refID : 0);
+	}
+}
+
+static bool Cmd_SaveIP_Execute(COMMAND_ARGS)
+{
+	void * returnAddress = _ReturnAddress();
+	u32 argsOffset = *opcodeOffsetPtr;
+
+	*result = 0;
+
+	u32 label = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &label)) return true;
+
+	ScriptRunner * runner = nullptr;
+	s32 * length = nullptr;
+	if(!GetStatementState(returnAddress, script, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
+	{
+		ReportUnfollowedJump("Label", script);
+		return true;
+	}
+
+	SavedIP & saved = s_savedIPs[{ script, label }];
+	saved.ip = argsOffset + *length;
+	saved.ifDepth = runner->ifDepth;
+	memcpy(saved.ifStack, runner->ifStack, sizeof(saved.ifStack));
+
+	return true;
+}
+
+static bool Cmd_RestoreIP_Execute(COMMAND_ARGS)
+{
+	void * returnAddress = _ReturnAddress();
+	u32 argsOffset = *opcodeOffsetPtr;
+
+	*result = 0;
+
+	u32 label = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &label)) return true;
+
+	ScriptRunner * runner = nullptr;
+	s32 * length = nullptr;
+	if(!GetStatementState(returnAddress, script, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
+	{
+		ReportUnfollowedJump("Goto", script);
+		return true;
+	}
+
+	// classic jumped to the start of the script for a label it hadn't seen; do nothing instead
+	auto saved = s_savedIPs.find({ script, label });
+	if(saved == s_savedIPs.end()) return true;
+
+	*length = s32(saved->second.ip) - s32(argsOffset);
+	runner->ifDepth = saved->second.ifDepth;
+	memcpy(runner->ifStack, saved->second.ifStack, sizeof(runner->ifStack));
+
+	return true;
+}
+
 // classic OBSE compiles these commands' arguments with its own expression compiler, which
 // isn't ported: they run in mods' compiled scripts but can't be typed in the console yet
 static bool Cmd_Expression_Parse(u32 numParams, const ParamInfo * paramInfo, ScriptLineBuffer * lineBuf, ScriptBuffer * scriptBuf)
@@ -909,6 +1031,31 @@ static CommandInfo kCommandInfo_TestExpr =
 	Cmd_Expression_Parse
 };
 
+static ParamInfo kParams_OneOptionalInt[1] =
+{
+	{	"int", kParamType_Integer, 1 },
+};
+
+static CommandInfo kCommandInfo_SaveIP =
+{
+	"SaveIP", "",
+	0,
+	"marks a place in the script for RestoreIP (Goto) to jump back to",
+	0,
+	1, kParams_OneOptionalInt,
+	Cmd_SaveIP_Execute
+};
+
+static CommandInfo kCommandInfo_RestoreIP =
+{
+	"RestoreIP", "",
+	0,
+	"jumps back to the place SaveIP (Label) marked",
+	0,
+	1, kParams_OneOptionalInt,
+	Cmd_RestoreIP_Execute
+};
+
 struct PortedCommand
 {
 	const CommandInfo	* info;
@@ -933,6 +1080,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetObjectCharge,	kRetnType_Default },
 	{ &kCommandInfo_GetEquippedCurrentCharge,	kRetnType_Default },
 	{ &kCommandInfo_ModEquippedCurrentCharge,	kRetnType_Default },
+	{ &kCommandInfo_SaveIP,			kRetnType_Default },
+	{ &kCommandInfo_RestoreIP,		kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },
