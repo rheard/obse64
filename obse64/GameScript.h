@@ -144,6 +144,24 @@ inline u32 FormIDFromValue(double value)
 	return u32(s64(value));
 }
 
+// Reads one numeric argument (a literal, a local or remote variable, a global, or a command
+// call), as ExtractArgs does for integer and float parameters, but keeps the double, so a ref
+// variable's form ID comes through whole. ExtractArgs passes true for allowSkip; then a script
+// without form flag 0x8 only skips over a command call instead of running it.
+typedef bool (* _ExtractNumericArg)(double * out, const char * scriptData, u32 * opcodeOffsetPtr,
+	TESObjectREFR * thisObj, TESObjectREFR * containingObj, Script * script, ScriptLocals * locals, bool allowSkip);
+extern RelocAddr <_ExtractNumericArg> ExtractNumericArg;
+
+// The value of one of a script's local variables. ScriptLocals + 0x18 is the list of variables,
+// each { u32 index, ..., double value at +8 }.
+typedef double (* _ScriptLocals_GetVariableValue)(ScriptLocals * locals, u32 varIdx, Script * script);
+extern RelocAddr <_ScriptLocals_GetVariableValue> ScriptLocals_GetVariableValue;
+
+// Entry refIdx (from 1) of a script's reference list, with a ref variable resolved through
+// locals. The entry's form is at +0x10.
+typedef void * (* _Script_GetResolvedRefVariable)(Script * script, u32 refIdx, ScriptLocals * locals);
+extern RelocAddr <_Script_GetResolvedRefVariable> Script_GetResolvedRefVariable;
+
 #define COMMAND_ARGS		const ParamInfo * paramInfo, const char * scriptData, TESObjectREFR * thisObj, TESObjectREFR * containingObj, Script * script, ScriptLocals * locals, double * result, u32 * opcodeOffsetPtr
 #define PASS_COMMAND_ARGS	paramInfo, scriptData, thisObj, containingObj, script, locals, result, opcodeOffsetPtr
 #define EXTRACT_ARGS		paramInfo, scriptData, opcodeOffsetPtr, thisObj, containingObj, script, locals

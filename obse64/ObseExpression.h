@@ -6,9 +6,9 @@
 
 // A first slice of classic OBSE's expression evaluator. Classic OBSE compiles the arguments of
 // commands such as TestExpr, PrintD and let in its own format: an argument count, then for
-// each argument a length and a postfix token stream. This evaluates numbers, strings, and
-// commands called on a reference; any other token is reported as unsupported and fails the
-// argument.
+// each argument a length and a postfix token stream. This evaluates numbers, strings, forms,
+// globals, number and ref variables, and command calls; operators and string or array
+// variables are reported as unsupported and fail the argument.
 class ObseExpression
 {
 public:
@@ -39,7 +39,8 @@ public:
 private:
 	bool	Evaluate(Value * out);
 	bool	EvaluateCommand(Value * out);
-	TESObjectREFR *	ResolveRef(u16 refIdx);
+	bool	ResolveForm(u16 refIdx, TESForm ** out);
+	bool	ReadGameNumber(const u8 * code, double * out);
 
 	template <typename T>
 	bool	Read(T * out);

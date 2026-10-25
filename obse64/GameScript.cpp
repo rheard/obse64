@@ -2,6 +2,9 @@
 
 RelocAddr <ParseFunction> DefaultParseFunction(0x0694B810);
 RelocAddr <_ExtractArgs> ExtractArgs(0x06630750);
+RelocAddr <_ExtractNumericArg> ExtractNumericArg(0x0662F330);
+RelocAddr <_ScriptLocals_GetVariableValue> ScriptLocals_GetVariableValue(0x0662F660);
+RelocAddr <_Script_GetResolvedRefVariable> Script_GetResolvedRefVariable(0x0662F140);
 
 // wrap this to give it a static address
 bool Cmd_Default_Parse(u32 numParams, const ParamInfo * paramInfo, ScriptLineBuffer * lineBuf, ScriptBuffer * scriptBuf)

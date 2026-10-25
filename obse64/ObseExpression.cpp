@@ -1,6 +1,7 @@
 #include "ObseExpression.h"
 #include "GameForms.h"
 #include "GameObjects.h"
+#include "GameRTTI.h"
 #include "Hooks_Script.h"
 #include "obse64_common/Log.h"
 #include <cstdarg>
@@ -9,6 +10,16 @@
 #include <set>
 
 CommandInfo * GetCommandInfo(u32 opcode);	// Hooks_Script.cpp
+
+// classic OBSE's variable types, as compiled into 'V' tokens
+enum
+{
+	kVarType_Float =	0,
+	kVarType_Integer =	1,
+	kVarType_String =	2,
+	kVarType_Array =	3,
+	kVarType_Ref =		4,
+};
 
 ObseExpression::ObseExpression(COMMAND_ARGS) :
 	m_scriptData((const u8 *)scriptData),
@@ -161,16 +172,86 @@ bool ObseExpression::Evaluate(Value * out)
 				break;
 
 			case 'R':
-				Fail("form tokens are not supported yet");
-				return false;
+			{
+				// a form from the script's reference list, which may be a ref variable
+				u16 refIdx;
+				if(!Read(&refIdx)) return false;
+
+				TESForm * form = nullptr;
+				if(!ResolveForm(refIdx, &form))
+				{
+					Fail("ref %d is not in the script's reference list", refIdx);
+					return false;
+				}
+
+				value.type = Value::kType_Form;
+				value.formID = form ? form->refID : 0;
+			}
+			break;
 
 			case 'G':
-				Fail("global variable tokens are not supported yet");
-				return false;
+			{
+				u16 refIdx;
+				if(!Read(&refIdx)) return false;
+
+				// the game's own token for a global is the same
+				const u8 code[] = { 'G', u8(refIdx), u8(refIdx >> 8) };
+				if(!ReadGameNumber(code, &value.number))
+				{
+					Fail("global %d could not be read", refIdx);
+					return false;
+				}
+
+				value.type = Value::kType_Number;
+			}
+			break;
 
 			case 'V':
-				Fail("variable tokens are not supported yet");
-				return false;
+			{
+				u8 varType;
+				u16 refIdx, varIdx;
+				if(!Read(&varType) || !Read(&refIdx) || !Read(&varIdx)) return false;
+
+				if(varType != kVarType_Float && varType != kVarType_Integer && varType != kVarType_Ref)
+				{
+					Fail("%s variables are not supported yet",
+						varType == kVarType_String ? "string" : (varType == kVarType_Array ? "array" : "unknown"));
+					return false;
+				}
+
+				// in the game's own tokens: 'f' and the variable's index, after 'r' and a
+				// reference's index for a variable of another script (a quest's or a reference's)
+				u8 code[6];
+				u32 len = 0;
+				if(refIdx)
+				{
+					code[len++] = 'r';
+					code[len++] = u8(refIdx);
+					code[len++] = u8(refIdx >> 8);
+				}
+				code[len++] = 'f';
+				code[len++] = u8(varIdx);
+				code[len++] = u8(varIdx >> 8);
+
+				double number = 0;
+				if(!ReadGameNumber(code, &number))
+				{
+					Fail("variable %d could not be read", varIdx);
+					return false;
+				}
+
+				if(varType == kVarType_Ref)
+				{
+					value.type = Value::kType_Form;
+					value.formID = FormIDFromValue(number);
+				}
+				else
+				{
+					value.type = Value::kType_Number;
+					value.number = number;
+				}
+			}
+			break;
 
 			default:
 				if(code < 'B')
@@ -211,10 +292,24 @@ bool ObseExpression::EvaluateCommand(Value * out)
 	TESObjectREFR * callingObj = m_thisObj;
 	if(refIdx)
 	{
-		callingObj = ResolveRef(refIdx);
-		if(!callingObj)
+		// as in classic, the form has to be a reference
+		TESForm * form = nullptr;
+		if(!ResolveForm(refIdx, &form))
+		{
+			Fail("ref %d is not in the script's reference list", refIdx);
+			return false;
+		}
+
+		if(!form)
 		{
 			Fail("%s called on a null reference", cmd->name);
+			return false;
+		}
+
+		callingObj = DYNAMIC_CAST(form, TESForm, TESObjectREFR);
+		if(!callingObj)
+		{
+			Fail("%s called on a base object (%08X)", cmd->name, form->refID);
 			return false;
 		}
 	}
@@ -233,11 +328,13 @@ bool ObseExpression::EvaluateCommand(Value * out)
 		return false;
 	}
 
+	// the command reads its arguments from the script data at an offset, as it does when it's a
+	// statement, with its opcode four bytes before them
 	double cmdResult = 0;
-	u32 bytesRead = 0;
+	u32 offset = u32(args - m_scriptData);
 
-	if(!cmd->execute(cmd->params, (const char *)args, callingObj, refIdx ? nullptr : m_containingObj,
-		m_script, m_locals, &cmdResult, &bytesRead))
+	if(!cmd->execute(cmd->params, (const char *)m_scriptData, callingObj, refIdx ? nullptr : m_containingObj,
+		m_script, m_locals, &cmdResult, &offset))
 	{
 		Fail("%s failed", cmd->name);
 		return false;
@@ -254,7 +351,7 @@ bool ObseExpression::EvaluateCommand(Value * out)
 
 		case kRetnType_Form:
 			out->type = Value::kType_Form;
-			out->formID = *(u32 *)&cmdResult;
+			out->formID = FormIDFromValue(cmdResult);
 			break;
 
 		default:
@@ -265,22 +362,33 @@ bool ObseExpression::EvaluateCommand(Value * out)
 	return true;
 }
 
-// The game resolves the reference, the way it resolves any reference passed to a command:
-// as an object-ref argument naming the script's refIdx'th reference.
-TESObjectREFR * ObseExpression::ResolveRef(u16 refIdx)
+// The form in entry refIdx of the script's reference list; false if there is no such entry. A
+// ref variable's entry is resolved from the variable's value, as classic does it: the game's own
+// lookup keeps the entry's previous form when the variable has been set to 0.
+bool ObseExpression::ResolveForm(u16 refIdx, TESForm ** out)
 {
-	static ParamInfo kParams_OneObjectRef[1] =
+	// without locals the game only finds the entry
+	auto * entry = (const u8 *)Script_GetResolvedRefVariable(m_script, refIdx, nullptr);
+	if(!entry) return false;
+
+	u32 varIdx = *(const u32 *)(entry + 0x18);
+	if(varIdx)
 	{
-		{	"reference", kParamType_ObjectRef, 0 },
-	};
+		if(!m_locals) return false;
 
-	const u8 args[] = { 1, 0, 'r', u8(refIdx), u8(refIdx >> 8) };
+		u32 formID = FormIDFromValue(ScriptLocals_GetVariableValue(m_locals, varIdx, m_script));
+		*out = formID ? LookupFormByID(formID) : nullptr;
+	}
+	else
+		*out = *(TESForm * const *)(entry + 0x10);
+
+	return true;
+}
+
+// Reads a value written in the game's own argument tokens with the game's reader, so variables
+// and globals resolve exactly as they do for vanilla commands.
+bool ObseExpression::ReadGameNumber(const u8 * code, double * out)
+{
 	u32 offset = 0;
-	TESObjectREFR * refr = nullptr;
-
-	if(!::ExtractArgs(kParams_OneObjectRef, (const char *)args, &offset, m_thisObj, m_containingObj,
-		m_script, m_locals, &refr))
-		return nullptr;
-
-	return refr;
+	return ExtractNumericArg(out, (const char *)code, &offset, m_thisObj, m_containingObj, m_script, m_locals, true);
 }

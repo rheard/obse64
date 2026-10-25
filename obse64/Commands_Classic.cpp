@@ -49,6 +49,32 @@ static bool Cmd_GetBaseObject_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// The interface manager keeps the reference the player would activate at +0x158. Unreal casts
+// the player's line of sight and hands the hit over (0x0655A460); the setter (0x065D6950) stores
+// it there while it's within reach and clears it otherwise, and the player's own activation reads
+// it from there (0x065694B0). Classic read HUDInfoMenu::crosshairRef, which stays empty here.
+static RelocPtr <u8 *> g_interfaceManager(0x0941F808);
+
+static bool Cmd_GetCrosshairRef_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESObjectREFR * refr = nullptr;
+	if(u8 * intfc = *g_interfaceManager)
+	{
+		if(auto * form = *(TESForm **)(intfc + 0x158))
+			refr = DYNAMIC_CAST(form, TESForm, TESObjectREFR);
+	}
+
+	if(refr)
+		SetFormResult(result, refr->refID);
+
+	if(IsConsoleMode())
+		Console_Print("GetCrosshairRef >> %08X (%s)", refr ? refr->refID : 0, refr ? GetFullName(refr) : "nothing");
+
+	return true;
+}
+
 static bool Cmd_GetObjectType_Execute(COMMAND_ARGS)
 {
 	*result = 0;
@@ -91,6 +117,16 @@ static CommandInfo kCommandInfo_GetBaseObject =
 	1,
 	0, nullptr,
 	Cmd_GetBaseObject_Execute
+};
+
+static CommandInfo kCommandInfo_GetCrosshairRef =
+{
+	"GetCrosshairRef", "",
+	0,
+	"returns the reference under the crosshair",
+	0,
+	0, nullptr,
+	Cmd_GetCrosshairRef_Execute
 };
 
 static CommandInfo kCommandInfo_GetObjectType =
@@ -179,12 +215,18 @@ static bool Cmd_SetDebugMode_Execute(COMMAND_ARGS)
 	return true;
 }
 
+static TESForm * FormFromValue(double value)
+{
+	u32 formID = FormIDFromValue(value);
+	return formID ? LookupFormByID(formID) : nullptr;
+}
+
 // Expands a classic OBSE format string. OBSE's own specifiers are replaced in place, and any
-// other % takes the next argument as a number, as classic OBSE left those to sprintf. The ones
-// that need a form, a string or a name table (%n %i %c %p %k %v %z) still use up their
-// arguments, so later numbers line up, but print "?" for now: the game hands the arguments
-// over as floats, which can't carry a form ID. False if there are too few arguments.
-static bool FormatClassicString(const char * fmt, const float * args, u32 numArgs, std::string * out)
+// other % takes the next argument as a number, as classic OBSE left those to sprintf. %n and %i
+// take a form, which a variable holds as its form ID's number. The ones that need a string or a
+// name table (%c %p %k %v %z) still use up their arguments, so later numbers line up, but print
+// "?" for now. False if there are too few arguments.
+static bool FormatClassicString(const char * fmt, const double * args, u32 numArgs, std::string * out)
 {
 	u32 argIdx = 0;
 	auto nextArg = [&](double * value)
@@ -226,8 +268,29 @@ static bool FormatClassicString(const char * fmt, const float * args, u32 numArg
 				p++;
 				break;
 
-			case 'n': case 'N':
-			case 'i': case 'I':
+			case 'n':
+			case 'N':
+				// the form's name
+				if(!nextArg(&value)) return false;
+				*out += GetFullName(FormFromValue(value));
+				p++;
+				break;
+
+			case 'i':
+			case 'I':
+			{
+				// the form's ID, zeros for none
+				if(!nextArg(&value)) return false;
+
+				TESForm * form = FormFromValue(value);
+
+				char buf[16];
+				snprintf(buf, sizeof(buf), "%08X", form ? form->refID : 0);
+				*out += buf;
+				p++;
+			}
+			break;
+
 			case 'k': case 'K':
 			case 'v': case 'V':
 			case 'z': case 'Z':
@@ -345,21 +408,34 @@ static ParamInfo kParams_FormatString[21] =
 	{	"variable",			kParamType_Float,	1 },
 };
 
-// reads a command's format string and up to 20 numbers, as classic OBSE's PrintToConsole does
+// Reads a command's format string and up to 20 numbers, as classic OBSE's PrintToConsole does.
+// The numbers are read one at a time by the game's numeric argument reader, which keeps them as
+// doubles, so a ref variable's form ID comes through whole: ExtractArgs would round them to floats.
 static bool ExtractClassicFormatString(COMMAND_ARGS, std::string * out)
 {
+	u32 offset = *opcodeOffsetPtr;
+	u32 end = offset + *(const u16 *)(scriptData + offset - 2);	// the arguments' length is just before them
+
 	// the argument count comes first, and includes the format string
-	u16 numArgs = *(const u16 *)(scriptData + *opcodeOffsetPtr);
+	u16 numArgs = *(const u16 *)(scriptData + offset);
+	u16 fmtLen = *(const u16 *)(scriptData + offset + 2);
+	offset += 4;
 
-	char fmt[0x4000] = { 0 };
-	float f[20] = { 0 };
+	if(!numArgs || numArgs > 21 || offset + fmtLen > end) return false;
 
-	if(!ExtractArgs(EXTRACT_ARGS, fmt,
-		&f[0], &f[1], &f[2], &f[3], &f[4], &f[5], &f[6], &f[7], &f[8], &f[9],
-		&f[10], &f[11], &f[12], &f[13], &f[14], &f[15], &f[16], &f[17], &f[18], &f[19]))
-		return false;
+	std::string fmt(scriptData + offset, fmtLen);
+	offset += fmtLen;
 
-	return FormatClassicString(fmt, f, numArgs ? numArgs - 1 : 0, out);
+	double args[20] = { 0 };
+	for(u32 i = 0; i < u32(numArgs - 1); i++)
+	{
+		if(offset >= end || !ExtractNumericArg(&args[i], scriptData, &offset, thisObj, containingObj, script, locals, true))
+			return false;
+	}
+
+	*opcodeOffsetPtr = offset;
+
+	return FormatClassicString(fmt.c_str(), args, numArgs - 1, out);
 }
 
 static bool Cmd_DebugPrint_Execute(COMMAND_ARGS)
@@ -467,6 +543,7 @@ struct PortedCommand
 static const PortedCommand kPortedCommands[] =
 {
 	{ &kCommandInfo_GetBaseObject,	kRetnType_Form },
+	{ &kCommandInfo_GetCrosshairRef,	kRetnType_Form },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },
