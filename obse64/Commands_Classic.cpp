@@ -419,6 +419,11 @@ static CommandInfo kCommandInfo_SetRefEssential =
 	Cmd_SetRefEssential_Execute
 };
 
+// in Commands_Inventory.cpp, next to the equipped item lookup they use
+extern CommandInfo kCommandInfo_GetObjectCharge;
+extern CommandInfo kCommandInfo_GetEquippedCurrentCharge;
+extern CommandInfo kCommandInfo_ModEquippedCurrentCharge;
+
 static CommandInfo kCommandInfo_IsOffLimits =
 {
 	"IsOffLimits", "",
@@ -924,6 +929,9 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetGoldValue,	kRetnType_Default },
 	{ &kCommandInfo_IsRefEssential,	kRetnType_Default },
 	{ &kCommandInfo_SetRefEssential,	kRetnType_Default },
+	{ &kCommandInfo_GetObjectCharge,	kRetnType_Default },
+	{ &kCommandInfo_GetEquippedCurrentCharge,	kRetnType_Default },
+	{ &kCommandInfo_ModEquippedCurrentCharge,	kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },

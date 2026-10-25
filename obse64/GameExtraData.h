@@ -87,3 +87,16 @@ public:
 };
 
 static_assert(sizeof(ExtraRank) == 0x20);
+
+// 20
+// an enchanted item's charge, only present while it isn't full
+class ExtraCharge : public BSExtraData
+{
+public:
+	enum { kID = kExtraData_Charge };
+
+	float	charge;	// 18
+	u32		pad1C;	// 1C
+};
+
+static_assert(sizeof(ExtraCharge) == 0x20);

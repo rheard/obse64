@@ -443,6 +443,166 @@ CommandInfo kCommandInfo_GetInventoryItemType =
 	Cmd_GetInventoryItemType_Execute
 };
 
+// classic OBSE's enchantment charge commands (Commands_Classic.cpp registers them)
+
+// what vanilla SetOwnership uses to give a list new extra data (0x06621210), and to drop it:
+// the game's allocator (Unreal's FMemory, 16-byte aligned), a constructor, and the list's own
+// add and remove
+typedef void * (* _GameHeap_Allocate)(size_t size);
+static RelocAddr <_GameHeap_Allocate> GameHeap_Allocate(0x04702CB0);
+typedef ExtraCharge * (* _ExtraCharge_Construct)(void * mem, float charge);
+static RelocAddr <_ExtraCharge_Construct> ExtraCharge_Construct(0x067FCD20);
+typedef void (* _BaseExtraList_Add)(BaseExtraList * list, BSExtraData * data);
+static RelocAddr <_BaseExtraList_Add> BaseExtraList_Add(0x06615310);
+typedef void (* _BaseExtraList_Remove)(BaseExtraList * list, BSExtraData * data, bool free);
+static RelocAddr <_BaseExtraList_Remove> BaseExtraList_Remove(0x0661D210);
+
+// an object's full charge, from its enchantable component; valid for weapons
+static u32 GetFullCharge(TESForm * form)
+{
+	auto * enchantable = form ? DYNAMIC_CAST(form, TESForm, TESEnchantableForm) : nullptr;
+	return enchantable ? enchantable->enchantment : 0;
+}
+
+static bool Cmd_GetObjectCharge_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESForm * form = nullptr;
+	if(!ExtractArgs(EXTRACT_ARGS, &form)) return true;
+
+	// a reference stands for its base object, and no argument for the calling reference's
+	if(auto * refr = form ? DYNAMIC_CAST(form, TESForm, TESObjectREFR) : nullptr)
+		form = refr->baseForm;
+	if(!form && thisObj)
+		form = thisObj->baseForm;
+
+	*result = GetFullCharge(form);
+
+	if(IsConsoleMode())
+		Console_Print("GetObjectCharge >> %.0f", *result);
+
+	return true;
+}
+
+class feGetCurrentCharge : public FoundEquipped
+{
+public:
+	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
+		auto * xCharge = extendData->m_data->Get<ExtraCharge>();
+		*result = xCharge ? xCharge->charge : GetFullCharge(entryData->type);
+		return true;
+	}
+};
+
+static bool Cmd_GetEquippedCurrentCharge_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	u32 slotIdx = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &slotIdx)) return true;
+
+	BaseExtraList::Locker lock;
+
+	feGetCurrentCharge getCharge;
+	FindEquipped(thisObj, slotIdx, &getCharge, result);
+
+	if(IsConsoleMode())
+		Console_Print("GetEquippedCurrentCharge %d >> %.2f", slotIdx, *result);
+
+	return true;
+}
+
+// As classic: the charge goes up or down by the amount, not below 0; back at full, the item
+// loses its ExtraCharge, as a fully charged item has none.
+class feModCurrentCharge : public FoundEquipped
+{
+	float	m_amount;
+
+public:
+	feModCurrentCharge(float amount) : m_amount(amount) { }
+
+	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
+		if(!DYNAMIC_CAST(entryData->type, TESForm, TESEnchantableForm)) return true;
+
+		ExtraDataList * list = extendData->m_data;
+		auto * xCharge = list->Get<ExtraCharge>();
+
+		float fullCharge = float(GetFullCharge(entryData->type));
+		float charge = (xCharge ? xCharge->charge : fullCharge) + m_amount;
+		if(charge < 0)
+			charge = 0;
+
+		if(charge == fullCharge)
+		{
+			if(xCharge)
+				BaseExtraList_Remove(list, xCharge, true);
+		}
+		else if(xCharge)
+			xCharge->charge = charge;
+		else if(void * mem = GameHeap_Allocate(sizeof(ExtraCharge)))
+			BaseExtraList_Add(list, ExtraCharge_Construct(mem, charge));
+
+		return true;
+	}
+};
+
+static bool Cmd_ModEquippedCurrentCharge_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	float amount = 0;
+	u32 slotIdx = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &amount, &slotIdx)) return true;
+
+	BaseExtraList::Locker lock;
+
+	feModCurrentCharge modCharge(amount);
+	FindEquipped(thisObj, slotIdx, &modCharge, result);
+
+	return true;
+}
+
+static ParamInfo kParams_ModEquippedFloat[2] =
+{
+	{ "value", kParamType_Float, 0 },
+	{ "slot", kParamType_Integer, 0 },
+};
+
+CommandInfo kCommandInfo_GetObjectCharge =
+{
+	"GetObjectCharge", "",
+	0,
+	"returns the enchantment charge of the object or calling reference",
+	0,
+	1, kParams_OneOptionalInventoryObject,
+	Cmd_GetObjectCharge_Execute
+};
+
+CommandInfo kCommandInfo_GetEquippedCurrentCharge =
+{
+	"GetEquippedCurrentCharge", "",
+	0,
+	"returns the current charge of the actor's specified equipment slot",
+	1,
+	1, kParams_OneInt,
+	Cmd_GetEquippedCurrentCharge_Execute
+};
+
+CommandInfo kCommandInfo_ModEquippedCurrentCharge =
+{
+	"ModEquippedCurrentCharge", "",
+	0,
+	"modifies the charge of the item in the specified equipment slot",
+	1,
+	2, kParams_ModEquippedFloat,
+	Cmd_ModEquippedCurrentCharge_Execute
+};
+
 CommandInfo kCommandInfo_GetEquipmentSlotType =
 {
 	"GetEquipmentSlotType", "gest",
