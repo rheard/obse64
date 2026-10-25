@@ -9,7 +9,14 @@
 class InputHook
 {
 public:
-	bool Get(u32 keycode) { return false; }
+	// Classic read DirectInput's key state, which only changes while the game has focus. The game
+	// takes its input from Unreal now, so this asks Windows instead, for the same key, and only
+	// while the game's window is in front.
+	bool Get(u32 keycode)
+	{
+		u32 virtualKey = VirtualKeyForKeycode(RemapMiceKeycodes(keycode));
+		return virtualKey && GameHasFocus() && (GetAsyncKeyState(virtualKey) & 0x8000);
+	}
 	void Tap(u32 keycode) { }
 	void Hold(u32 keycode) { }
 	void Release(u32 keycode) { }
@@ -40,6 +47,46 @@ private:
 			keycode = 0x100 + (keycode >> 8);
 
 		return keycode;
+	}
+
+	// keycodes are DirectInput scan codes, 0x80 set for the keys with an E0 prefix, and from 0x100
+	// the mouse buttons
+	static u32 VirtualKeyForKeycode(u32 keycode)
+	{
+		switch(keycode)
+		{
+			case 0x45:	return VK_NUMLOCK;	// DIK_NUMLOCK and DIK_PAUSE: scan code 45 is both
+			case 0xC5:	return VK_PAUSE;
+			case 0xB7:	return VK_SNAPSHOT;	// DIK_SYSRQ
+			case 0x100:	return VK_LBUTTON;
+			case 0x101:	return VK_RBUTTON;
+			case 0x102:	return VK_MBUTTON;
+			case 0x103:	return VK_XBUTTON1;
+			case 0x104:	return VK_XBUTTON2;
+		}
+
+		// the number pad's digits share scan codes with the arrows and Home, End, PgUp, PgDn, Ins
+		// and Del, which Windows maps them to
+		static const u8 kNumpad[] = { VK_NUMPAD7, VK_NUMPAD8, VK_NUMPAD9, 0, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6, 0, VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD0, VK_DECIMAL };
+		if(keycode >= 0x47 && keycode <= 0x53 && kNumpad[keycode - 0x47])
+			return kNumpad[keycode - 0x47];
+
+		if(keycode >= 0x100) return 0;
+
+		u32 scanCode = keycode & 0x7F;
+		if(keycode & 0x80)
+			scanCode |= 0xE000;
+
+		return MapVirtualKeyExW(scanCode, MAPVK_VSC_TO_VK_EX, GetKeyboardLayout(0));
+	}
+
+	static bool GameHasFocus()
+	{
+		DWORD processID = 0;
+		if(HWND window = GetForegroundWindow())
+			GetWindowThreadProcessId(window, &processID);
+
+		return processID == GetCurrentProcessId();
 	}
 };
 
