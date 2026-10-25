@@ -182,4 +182,6 @@ void AddScriptCommands()
 	ImportConsoleCommand("WaterReflectionColor");
 	ImportConsoleCommand("SetGamma");
 	ImportConsoleCommand("SetHDRParam");
+
+	AddClassicCommands();
 }

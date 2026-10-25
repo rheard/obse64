@@ -20,3 +20,8 @@ ParamInfo kParams_OneSpellItem[1] =
 {
 	{	"spell", kParamType_SpellItem, 0 },
 };
+
+ParamInfo kParams_OneOptionalInventoryObject[1] =
+{
+	{	"inventory object", kParamType_InventoryObject, 1 },
+};

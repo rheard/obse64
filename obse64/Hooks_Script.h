@@ -19,3 +19,6 @@ enum CommandReturnType : u8
 void Hooks_Script_Apply();
 
 void AddScriptCommand(const CommandInfo & cmd, CommandReturnType retnType = kRetnType_Default);
+
+// opcode the next AddScriptCommand call will get
+u32 GetNextScriptOpcode();

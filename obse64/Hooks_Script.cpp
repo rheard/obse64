@@ -101,6 +101,11 @@ void AddScriptCommand(const CommandInfo & cmd, CommandReturnType retnType)
 	g_commandTable.Add(cmd, retnType);
 }
 
+u32 GetNextScriptOpcode()
+{
+	return u32(kScript_ScriptOpBase + g_commandTable.NumCommands());
+}
+
 void HookedCommandTable::Add(const CommandInfo & cmd, CommandReturnType retnType)
 {
 	ASSERT(!m_locked);

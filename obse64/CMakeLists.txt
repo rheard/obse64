@@ -136,6 +136,8 @@ source_group(
 		Commands_Player.cpp
 		Commands_Math.cpp
 		Commands_MiscReference.cpp
+		Commands_Classic.cpp
+		ClassicCommandTable.inl
 )
 
 # ---- Create library ----
