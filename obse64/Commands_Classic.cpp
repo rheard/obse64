@@ -672,6 +672,26 @@ IS_FORM_TYPE(IsFlora,		Flora,			"flora")
 
 #undef IS_FORM_TYPE
 
+static ParamInfo kParams_OneOptionalActorBase[1] =
+{
+	{	"actor base", kParamType_ActorBase, 1 },
+};
+
+static bool Cmd_IsCreature_Execute(COMMAND_ARGS)
+{
+	return IsFormType_Execute(PASS_COMMAND_ARGS, kFormType_Creature, "IsCreature");
+}
+
+static CommandInfo kCommandInfo_IsCreature =
+{
+	"IsCreature", "",
+	0,
+	"returns 1 if the passed actor base is a creature",
+	0,
+	1, kParams_OneOptionalActorBase,
+	Cmd_IsCreature_Execute
+};
+
 enum
 {
 	kMenuType_Magic =	1022,
@@ -1568,6 +1588,7 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_IsMiscItem,		kRetnType_Default },
 	{ &kCommandInfo_IsFurniture,	kRetnType_Default },
 	{ &kCommandInfo_IsFlora,		kRetnType_Default },
+	{ &kCommandInfo_IsCreature,		kRetnType_Default },
 	{ &kCommandInfo_SetDebugMode,	kRetnType_Default },
 	{ &kCommandInfo_DebugPrint,		kRetnType_Default },
 	{ &kCommandInfo_PrintD,			kRetnType_Default },
