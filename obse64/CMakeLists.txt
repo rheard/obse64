@@ -139,6 +139,7 @@ source_group(
 		Commands_Math.cpp
 		Commands_MiscReference.cpp
 		Commands_Classic.cpp
+		Commands_Classic.h
 		ClassicCommandTable.inl
 )
 

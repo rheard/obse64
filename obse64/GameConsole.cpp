@@ -2,6 +2,8 @@
 #include "obse64_common/Log.h"
 #include "obse64_common/Relocation.h"
 #include "obse64_common/Utilities.h"
+#include <cstring>
+#include <string>
 
 RelocPtr <u8> g_bConsoleMode(0x094800B8);
 RelocPtr <std::uintptr_t> _Console_Print(0x0656A7A0);
@@ -27,7 +29,23 @@ void ScriptConsolePrint(const char * text)
 
 	u8 outputEnabled = *g_bConsoleOutputEnabled;
 	*g_bConsoleOutputEnabled = 1;
-	Console_Print("%s", text);
+
+	// long text goes in pieces, as classic OBSE printed it: the console's printer copies a line
+	// into a 2048-byte buffer without checking its length (0x06633400)
+	const size_t kMaxPiece = 500;
+	size_t len = strlen(text);
+	size_t start = 0;
+	do
+	{
+		size_t pieceLen = len - start;
+		if(pieceLen > kMaxPiece) pieceLen = kMaxPiece;
+
+		std::string piece(text + start, pieceLen);
+		Console_Print("%s", piece.c_str());
+		start += pieceLen;
+	}
+	while(start < len);
+
 	*g_bConsoleOutputEnabled = outputEnabled;
 
 	if(s_logPrints)

@@ -1,3 +1,4 @@
+#include "Commands_Classic.h"
 #include "GameConsole.h"
 #include "GameScript.h"
 
@@ -5,41 +6,26 @@
  * syntax: PrintToConsole fmtstring num1 num2 ...
  * shortname: printc
  *
- * Prints a formatted string to the Oblivion console, similar to how printf() works.
- * -Format notation is the same as MessageBox, so you can use %#.#f %g %e %%
- * -While this function technically accepts floats, you can use %g to print integers.  Again, how this works
- *  is probably similar to how MessageBox works (ie. same range limitations).
- * -The string can be up to 511 characters long, not including the null byte.
- * -You can pass up to 9 variables, but you don't have to pass any at all.
+ * Prints a formatted string to the Oblivion console, as classic OBSE does.
+ * -Numbers use printf notation (%#.#f %g %e), and OBSE's own specifiers work too, such as %n for a
+ *  form's name and %i for its ID, so classic mods' format strings print as they did.
+ * -You can pass up to 20 variables, but you don't have to pass any at all.
+ * -Returns 1 if it printed.
  */
 bool Cmd_PrintToConsole_Execute(COMMAND_ARGS)
 {
-	char fmtstring[BUFSIZ];
-	float f0 = 0, f1 = 0, f2 = 0, f3 = 0, f4 = 0, f5 = 0, f6 = 0, f7 = 0, f8 = 0;
+	*result = 0;
 
-	if (ExtractArgs(EXTRACT_ARGS, &fmtstring, &f0, &f1, &f2, &f3, &f4, &f5, &f6, &f7, &f8))
+	// not snprintf: classic mods pass OBSE's specifiers, and snprintf rejects %n, which ends the game
+	std::string text;
+	if(ExtractClassicFormatString(PASS_COMMAND_ARGS, &text))
 	{
-		char text[BUFSIZ];
-		snprintf(text, sizeof(text), fmtstring, f0, f1, f2, f3, f4, f5, f6, f7, f8);
-		ScriptConsolePrint(text);
+		ScriptConsolePrint(text.c_str());
+		*result = 1;
 	}
 
 	return true;
 }
-
-ParamInfo kParams_StringFormat[10] =
-{
-	{"string", kParamType_String, 0},
-	{"float", kParamType_Float, 1},
-	{"float", kParamType_Float, 1},
-	{"float", kParamType_Float, 1},
-	{"float", kParamType_Float, 1},
-	{"float", kParamType_Float, 1},
-	{"float", kParamType_Float, 1},
-	{"float", kParamType_Float, 1},
-	{"float", kParamType_Float, 1},
-	{"float", kParamType_Float, 1}
-};
 
 CommandInfo kCommandInfo_PrintToConsole =
 {
@@ -47,6 +33,6 @@ CommandInfo kCommandInfo_PrintToConsole =
 	0,
 	"Print formatted string to console",
 	0,
-	10, kParams_StringFormat,
+	21, kParams_FormatString,
 	Cmd_PrintToConsole_Execute
 };

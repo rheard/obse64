@@ -1,3 +1,4 @@
+#include "Commands_Classic.h"
 #include "CommandTable.h"
 #include "GameConsole.h"
 #include "GameExtraData.h"
@@ -758,7 +759,7 @@ static bool FormatClassicString(const char * fmt, const double * args, u32 numAr
 	return true;
 }
 
-static ParamInfo kParams_FormatString[21] =
+ParamInfo kParams_FormatString[21] =
 {
 	{	"format string",	kParamType_String,	0 },
 	{	"variable",			kParamType_Float,	1 },
@@ -786,7 +787,7 @@ static ParamInfo kParams_FormatString[21] =
 // Reads a command's format string and up to 20 numbers, as classic OBSE's PrintToConsole does.
 // The numbers are read one at a time by the game's numeric argument reader, which keeps them as
 // doubles, so a ref variable's form ID comes through whole: ExtractArgs would round them to floats.
-static bool ExtractClassicFormatString(COMMAND_ARGS, std::string * out)
+bool ExtractClassicFormatString(COMMAND_ARGS, std::string * out)
 {
 	u32 offset = *opcodeOffsetPtr;
 	u32 end = offset + *(const u16 *)(scriptData + offset - 2);	// the arguments' length is just before them
