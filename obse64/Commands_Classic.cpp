@@ -1,5 +1,6 @@
 #include "CommandTable.h"
 #include "GameConsole.h"
+#include "GameExtraData.h"
 #include "GameForms.h"
 #include "GameObjects.h"
 #include "GameRTTI.h"
@@ -199,6 +200,120 @@ static bool Cmd_OnControlDown_Execute(COMMAND_ARGS)
 
 	return true;
 }
+
+// Ownership is kept in a reference's extra data, or in its cell's for references (and their
+// contents) that have none of their own. Vanilla SetOwnership and ClearOwnership change only the
+// owner, so a required rank stays with the reference.
+static TESForm * GetOwner(const BaseExtraList & extraList)
+{
+	BaseExtraList::Locker lock;
+
+	auto * xOwner = extraList.Get <ExtraOwnership>();
+	return xOwner ? xOwner->owner : nullptr;
+}
+
+static u32 GetOwningFactionRequiredRank(const BaseExtraList & extraList)
+{
+	BaseExtraList::Locker lock;
+
+	auto * xRank = extraList.Get <ExtraRank>();
+	return xRank ? xRank->rank : 0;
+}
+
+static void SetOwnerResult(double * result, TESForm * owner, const char * name)
+{
+	if(owner)
+		SetFormResult(result, owner->refID);
+
+	if(IsConsoleMode())
+		Console_Print("%s >> %08X (%s)", name, owner ? owner->refID : 0, owner ? GetFullName(owner) : "none");
+}
+
+static bool Cmd_GetOwner_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(thisObj)
+		SetOwnerResult(result, GetOwner(thisObj->extraList), "GetOwner");
+
+	return true;
+}
+
+static bool Cmd_GetParentCellOwner_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(thisObj && thisObj->parentCell)
+		SetOwnerResult(result, GetOwner(thisObj->parentCell->extraData), "GetParentCellOwner");
+
+	return true;
+}
+
+static bool Cmd_GetOwningFactionRequiredRank_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(thisObj)
+		*result = GetOwningFactionRequiredRank(thisObj->extraList);
+
+	if(IsConsoleMode())
+		Console_Print("GetOwningFactionRequiredRank >> %d", (int)*result);
+
+	return true;
+}
+
+static bool Cmd_GetParentCellOwningFactionRequiredRank_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(thisObj && thisObj->parentCell)
+		*result = GetOwningFactionRequiredRank(thisObj->parentCell->extraData);
+
+	if(IsConsoleMode())
+		Console_Print("GetParentCellOwningFactionRequiredRank >> %d", (int)*result);
+
+	return true;
+}
+
+static CommandInfo kCommandInfo_GetOwner =
+{
+	"GetOwner", "",
+	0,
+	"returns the owner of the calling reference",
+	1,
+	0, nullptr,
+	Cmd_GetOwner_Execute
+};
+
+static CommandInfo kCommandInfo_GetParentCellOwner =
+{
+	"GetParentCellOwner", "",
+	0,
+	"returns the owner of the calling reference's cell",
+	1,
+	0, nullptr,
+	Cmd_GetParentCellOwner_Execute
+};
+
+static CommandInfo kCommandInfo_GetOwningFactionRequiredRank =
+{
+	"GetOwningFactionRequiredRank", "",
+	0,
+	"returns the required rank for ownership of the calling reference",
+	1,
+	0, nullptr,
+	Cmd_GetOwningFactionRequiredRank_Execute
+};
+
+static CommandInfo kCommandInfo_GetParentCellOwningFactionRequiredRank =
+{
+	"GetParentCellOwningFactionRequiredRank", "",
+	0,
+	"returns the required rank for ownership of the calling reference's cell",
+	1,
+	0, nullptr,
+	Cmd_GetParentCellOwningFactionRequiredRank_Execute
+};
 
 static CommandInfo kCommandInfo_IsControlPressed =
 {
@@ -637,6 +752,10 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetCrosshairRef,	kRetnType_Form },
 	{ &kCommandInfo_IsControlPressed,	kRetnType_Default },
 	{ &kCommandInfo_OnControlDown,	kRetnType_Default },
+	{ &kCommandInfo_GetOwner,		kRetnType_Form },
+	{ &kCommandInfo_GetParentCellOwner,	kRetnType_Form },
+	{ &kCommandInfo_GetOwningFactionRequiredRank,	kRetnType_Default },
+	{ &kCommandInfo_GetParentCellOwningFactionRequiredRank,	kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },

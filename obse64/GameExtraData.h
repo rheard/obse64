@@ -63,3 +63,27 @@ public:
 
 static_assert(sizeof(ExtraMapMarker) == 0x20);
 static_assert(sizeof(ExtraMapMarker::Data) == 0x20);
+
+// 20
+class ExtraOwnership : public BSExtraData
+{
+public:
+	enum { kID = kExtraData_Ownership };
+
+	TESForm	* owner;	// 18 an NPC or a faction
+};
+
+static_assert(sizeof(ExtraOwnership) == 0x20);
+
+// 20
+// the rank an owning faction requires of its members, only present when it's above 0
+class ExtraRank : public BSExtraData
+{
+public:
+	enum { kID = kExtraData_Rank };
+
+	u32	rank;	// 18
+	u32	pad1C;	// 1C
+};
+
+static_assert(sizeof(ExtraRank) == 0x20);
