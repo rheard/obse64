@@ -376,6 +376,89 @@ static bool Cmd_SetQuestItem_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// A model's path is the BSString at +0x08 of TESModel. Armor and clothing have no TESModel: their
+// models are in the biped model component, where the game loads the male ground (world) model,
+// MOD2, into +0x70 (0x06820F40). Paths are set with the game's string setter, which is all
+// TESModel's own setter does (0x067D6740).
+typedef bool (* _BSString_Set)(BSStringT * str, const char * src, u32 minLength);
+static RelocAddr <_BSString_Set> BSString_Set(0x06562E40);
+
+static BSStringT * ModelPathOf(TESForm * form, bool maleGround)
+{
+	if(!form) return nullptr;
+
+	if(maleGround)
+	{
+		auto * biped = DYNAMIC_CAST(form, TESForm, TESBipedModelForm);
+		return biped ? &biped->groundModel[0].nifPath : nullptr;
+	}
+
+	auto * model = DYNAMIC_CAST(form, TESForm, TESModel);
+	return model ? &model->nifPath : nullptr;
+}
+
+// classic's ModelPathIncludes and friends: is text part of the path, ignoring case
+static bool ComparePath_Execute(COMMAND_ARGS, bool maleGround, const char * name)
+{
+	*result = 0;
+
+	char text[BUFSIZ] = { 0 };
+	TESForm * form = nullptr;
+	if(!ExtractArgs(EXTRACT_ARGS, &text, &form)) return true;
+
+	BSStringT * path = ModelPathOf(FormArgOrBase(form, thisObj), maleGround);
+	if(path && path->m_data && *text)
+	{
+		std::string haystack(path->m_data), needle(text);
+		for(char & c : haystack) c = char(tolower(u8(c)));
+		for(char & c : needle) c = char(tolower(u8(c)));
+
+		if(haystack.find(needle) != std::string::npos)
+			*result = 1;
+	}
+
+	if(IsConsoleMode())
+		Console_Print("%s >> %d", name, (int)*result);
+
+	return true;
+}
+
+static bool CopyPath_Execute(COMMAND_ARGS, bool maleGround)
+{
+	*result = 0;
+
+	TESForm * src = nullptr;
+	TESForm * dest = nullptr;
+	if(!ExtractArgs(EXTRACT_ARGS, &src, &dest)) return true;
+
+	BSStringT * srcPath = ModelPathOf(FormArgOrBase(src, nullptr), maleGround);
+	BSStringT * destPath = ModelPathOf(FormArgOrBase(dest, thisObj), maleGround);
+	if(srcPath && destPath && srcPath != destPath)
+		BSString_Set(destPath, srcPath->m_data, 0);
+
+	return true;
+}
+
+static bool Cmd_CompareModelPath_Execute(COMMAND_ARGS)
+{
+	return ComparePath_Execute(PASS_COMMAND_ARGS, false, "CompareModelPath");
+}
+
+static bool Cmd_CompareMaleGroundPath_Execute(COMMAND_ARGS)
+{
+	return ComparePath_Execute(PASS_COMMAND_ARGS, true, "CompareMaleGroundPath");
+}
+
+static bool Cmd_CopyModelPath_Execute(COMMAND_ARGS)
+{
+	return CopyPath_Execute(PASS_COMMAND_ARGS, false);
+}
+
+static bool Cmd_CopyMaleGroundPath_Execute(COMMAND_ARGS)
+{
+	return CopyPath_Execute(PASS_COMMAND_ARGS, true);
+}
+
 static ParamInfo kParams_OneOptionalNPC[1] =
 {
 	{	"npc", kParamType_NPC, 1 },
@@ -1076,6 +1159,18 @@ static ParamInfo kParams_SetObjectInteger[2] =
 	{	"type", kParamType_InventoryObject, 1 },
 };
 
+static ParamInfo kParams_SetObjectString[2] =
+{
+	{	"value", kParamType_String, 0 },
+	{	"type", kParamType_InventoryObject, 1 },
+};
+
+static ParamInfo kParams_CopyObjectPath[2] =
+{
+	{	"src", kParamType_InventoryObject, 0 },
+	{	"dest", kParamType_InventoryObject, 1 },
+};
+
 static CommandInfo kCommandInfo_IsQuestItem =
 {
 	"IsQuestItem", "",
@@ -1094,6 +1189,46 @@ static CommandInfo kCommandInfo_SetQuestItem =
 	0,
 	2, kParams_SetObjectInteger,
 	Cmd_SetQuestItem_Execute
+};
+
+static CommandInfo kCommandInfo_CompareModelPath =
+{
+	"CompareModelPath", "",
+	0,
+	"Returns 1 if the given string is part of the model path.",
+	0,
+	2, kParams_SetObjectString,
+	Cmd_CompareModelPath_Execute
+};
+
+static CommandInfo kCommandInfo_CompareMaleGroundPath =
+{
+	"CompareMaleGroundPath", "",
+	0,
+	"Returns 1 if the given string is part of the male ground path.",
+	0,
+	2, kParams_SetObjectString,
+	Cmd_CompareMaleGroundPath_Execute
+};
+
+static CommandInfo kCommandInfo_CopyModelPath =
+{
+	"CopyModelPath", "",
+	0,
+	"copies the model path from one object to another",
+	0,
+	2, kParams_CopyObjectPath,
+	Cmd_CopyModelPath_Execute
+};
+
+static CommandInfo kCommandInfo_CopyMaleGroundPath =
+{
+	"CopyMaleGroundPath", "",
+	0,
+	"copies the male ground path from one object to another",
+	0,
+	2, kParams_CopyObjectPath,
+	Cmd_CopyMaleGroundPath_Execute
 };
 
 static CommandInfo kCommandInfo_SaveIP =
@@ -1142,6 +1277,10 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_ModEquippedCurrentCharge,	kRetnType_Default },
 	{ &kCommandInfo_IsQuestItem,	kRetnType_Default },
 	{ &kCommandInfo_SetQuestItem,	kRetnType_Default },
+	{ &kCommandInfo_CompareModelPath,	kRetnType_Default },
+	{ &kCommandInfo_CompareMaleGroundPath,	kRetnType_Default },
+	{ &kCommandInfo_CopyModelPath,	kRetnType_Default },
+	{ &kCommandInfo_CopyMaleGroundPath,	kRetnType_Default },
 	{ &kCommandInfo_SaveIP,			kRetnType_Default },
 	{ &kCommandInfo_RestoreIP,		kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
