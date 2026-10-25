@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <set>
 #include <string>
 
@@ -127,6 +128,96 @@ static CommandInfo kCommandInfo_GetCrosshairRef =
 	0,
 	0, nullptr,
 	Cmd_GetCrosshairRef_Execute
+};
+
+// The game's controls (classic OSInputGlobals, class Controls here) are at +0x30 of the OS
+// globals. Unreal sets each control's state in it, and QueryControlState compares (1 << query)
+// with that: query 0 held (state 1), 1 just pressed (state 2), 2 just released (state 4).
+// Classic's DirectInput path is still in it, for when Unreal isn't the source.
+static RelocPtr <u8 *> g_osGlobals(0x0941F740);
+
+typedef u32 (* _Controls_QueryControlState)(void * controls, u32 control, u32 query);
+static RelocAddr <_Controls_QueryControlState> Controls_QueryControlState(0x0673EA30);
+
+enum
+{
+	kControl_Count =	29,	// the mappable controls, Forward (0) to Grab (0x1C)
+
+	kKeyQuery_Held =	0,
+	kKeyQuery_Pressed =	1,
+};
+
+static bool IsControlDown(u32 control)
+{
+	if(control >= kControl_Count) return false;
+
+	u8 * osGlobals = *g_osGlobals;
+	void * controls = osGlobals ? *(void **)(osGlobals + 0x30) : nullptr;
+	if(!controls) return false;
+
+	return Controls_QueryControlState(controls, control, kKeyQuery_Held) ||
+		Controls_QueryControlState(controls, control, kKeyQuery_Pressed);
+}
+
+static bool Cmd_IsControlPressed_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 control = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &control)) return true;
+
+	if(IsControlDown(control))
+		*result = 1;
+
+	if(IsConsoleMode())
+		Console_Print("IsControlPressed %d >> %d", control, (int)*result);
+
+	return true;
+}
+
+// 1 the first time each script asks after the control went down, then 0 until it's released
+// and pressed again, as in classic
+static bool Cmd_OnControlDown_Execute(COMMAND_ARGS)
+{
+	static std::map <u32, std::set <u32>> s_reported;	// script form ID -> controls it has been told are down
+
+	*result = 0;
+
+	u32 control = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &control) || !script) return true;
+
+	// Script derives from TESForm
+	auto & reported = s_reported[reinterpret_cast <TESForm *>(script)->refID];
+
+	if(IsControlDown(control))
+	{
+		if(reported.insert(control).second)
+			*result = 1;
+	}
+	else
+		reported.erase(control);
+
+	return true;
+}
+
+static CommandInfo kCommandInfo_IsControlPressed =
+{
+	"IsControlPressed", "",
+	0,
+	"returns true if the key or button assigned to control is pressed",
+	0,
+	1, kParams_OneInt,
+	Cmd_IsControlPressed_Execute
+};
+
+static CommandInfo kCommandInfo_OnControlDown =
+{
+	"OnControlDown", "",
+	0,
+	"returns true each time the key or button assigned to control is depressed",
+	0,
+	1, kParams_OneInt,
+	Cmd_OnControlDown_Execute
 };
 
 static CommandInfo kCommandInfo_GetObjectType =
@@ -544,6 +635,8 @@ static const PortedCommand kPortedCommands[] =
 {
 	{ &kCommandInfo_GetBaseObject,	kRetnType_Form },
 	{ &kCommandInfo_GetCrosshairRef,	kRetnType_Form },
+	{ &kCommandInfo_IsControlPressed,	kRetnType_Default },
+	{ &kCommandInfo_OnControlDown,	kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },
