@@ -344,6 +344,81 @@ static ParamInfo kParams_OneOptionalNPC[1] =
 	{	"npc", kParamType_NPC, 1 },
 };
 
+// An actor base's flags: classic TESActorBaseData's, at +0x08 of that component (+0x48 in NPCs
+// and creatures). Despite their names, IsRefEssential and SetRefEssential work on the base, as
+// vanilla SetEssential does (0x06A18F20), which also marks the flags changed so a save keeps them.
+enum
+{
+	kActorBaseFlag_Essential =	0x02,
+	kActorBaseChanged_Flags =	0x10,
+};
+
+static u8 * GetActorBaseData(TESObjectREFR * refr)
+{
+	if(!refr || !refr->baseForm) return nullptr;
+
+	return (u8 *)Runtime_DynamicCast(refr->baseForm, RTTI_TESForm, RTTI_TESActorBaseData);
+}
+
+static bool Cmd_IsRefEssential_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(u8 * data = GetActorBaseData(thisObj))
+	{
+		if(*(u32 *)(data + 0x08) & kActorBaseFlag_Essential)
+			*result = 1;
+	}
+
+	if(IsConsoleMode())
+		Console_Print("IsRefEssential >> %d", (int)*result);
+
+	return true;
+}
+
+static bool Cmd_SetRefEssential_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 essential = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &essential)) return true;
+
+	if(u8 * data = GetActorBaseData(thisObj))
+	{
+		u32 & flags = *(u32 *)(data + 0x08);
+		if(essential)
+			flags |= kActorBaseFlag_Essential;
+		else
+			flags &= ~kActorBaseFlag_Essential;
+
+		typedef void (* _MarkChanged)(void * component, u32 changeFlags);
+		auto markChanged = reinterpret_cast <_MarkChanged>((*(void ***)data)[0xA0 / 8]);
+		markChanged(data, kActorBaseChanged_Flags);
+	}
+
+	return true;
+}
+
+static CommandInfo kCommandInfo_IsRefEssential =
+{
+	"IsRefEssential", "",
+	0,
+	"returns 1 if the calling reference is essential",
+	1,
+	0, nullptr,
+	Cmd_IsRefEssential_Execute
+};
+
+static CommandInfo kCommandInfo_SetRefEssential =
+{
+	"SetRefEssential", "",
+	0,
+	"changes the calling reference to essential",
+	1,
+	1, kParams_OneInt,
+	Cmd_SetRefEssential_Execute
+};
+
 static CommandInfo kCommandInfo_IsOffLimits =
 {
 	"IsOffLimits", "",
@@ -847,6 +922,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetParentCellOwningFactionRequiredRank,	kRetnType_Default },
 	{ &kCommandInfo_IsOffLimits,	kRetnType_Default },
 	{ &kCommandInfo_GetGoldValue,	kRetnType_Default },
+	{ &kCommandInfo_IsRefEssential,	kRetnType_Default },
+	{ &kCommandInfo_SetRefEssential,	kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },
 	{ &kCommandInfo_IsWeapon,		kRetnType_Default },
 	{ &kCommandInfo_IsAmmo,			kRetnType_Default },
