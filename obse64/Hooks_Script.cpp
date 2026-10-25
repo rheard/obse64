@@ -63,6 +63,9 @@ public:
 
 	void	Add(const CommandInfo & cmd, CommandReturnType retnType = kRetnType_Default);
 
+	CommandReturnType	GetReturnType(u32 idx) const { return m_cmdExtra[idx].retnType; }
+	void				SetReturnType(u32 idx, CommandReturnType retnType) { m_cmdExtra[idx].retnType = retnType; }
+
 	void	Lock() { m_locked = true; }
 
 	void	Reserve(size_t len);
@@ -104,6 +107,22 @@ void AddScriptCommand(const CommandInfo & cmd, CommandReturnType retnType)
 u32 GetNextScriptOpcode()
 {
 	return u32(kScript_ScriptOpBase + g_commandTable.NumCommands());
+}
+
+CommandReturnType GetCommandReturnType(u32 opcode)
+{
+	u32 idx = opcode - kScript_ScriptOpBase;
+	if(idx >= g_commandTable.NumCommands())
+		return kRetnType_Default;
+
+	return g_commandTable.GetReturnType(idx);
+}
+
+void SetCommandReturnType(u32 opcode, CommandReturnType retnType)
+{
+	u32 idx = opcode - kScript_ScriptOpBase;
+	if(idx < g_commandTable.NumCommands())
+		g_commandTable.SetReturnType(idx, retnType);
 }
 
 void HookedCommandTable::Add(const CommandInfo & cmd, CommandReturnType retnType)

@@ -22,3 +22,6 @@ void AddScriptCommand(const CommandInfo & cmd, CommandReturnType retnType = kRet
 
 // opcode the next AddScriptCommand call will get
 u32 GetNextScriptOpcode();
+
+CommandReturnType GetCommandReturnType(u32 opcode);
+void SetCommandReturnType(u32 opcode, CommandReturnType retnType);

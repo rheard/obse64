@@ -121,6 +121,8 @@ source_group(
 		SteamInit.h
 		CommandTable.cpp
 		CommandTable.h
+		ObseExpression.cpp
+		ObseExpression.h
 		ParamInfos.cpp
 		ParamInfos.h
 		MersenneTwister.cpp
