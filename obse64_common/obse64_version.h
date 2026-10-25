@@ -12,6 +12,9 @@
 // the version of classic OBSE currently implemented
 #define OBSE_VERSION_IMPL_INTEGER	6
 
+// what GetOBSEVersion reports with the classic commands
+#define OBSE_VERSION_CLASSIC_REPORTED	10
+
 //	x-------	major
 //	-xxx----	minor
 //	----xxx-	build
