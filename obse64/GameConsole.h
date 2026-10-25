@@ -14,3 +14,8 @@ void Console_Print(const char* fmt, Args... args)
 }
 
 bool IsConsoleMode();
+
+// Prints a line from a script command to the console, turning on the console output the game
+// otherwise allows only while a typed command runs, and copies the line to obse64.txt.
+// [Debug] LogScriptPrints=0 in obse.ini turns the copy off.
+void ScriptConsolePrint(const char * text);

@@ -19,7 +19,9 @@ bool Cmd_PrintToConsole_Execute(COMMAND_ARGS)
 
 	if (ExtractArgs(EXTRACT_ARGS, &fmtstring, &f0, &f1, &f2, &f3, &f4, &f5, &f6, &f7, &f8))
 	{
-		Console_Print(fmtstring, f0, f1, f2, f3, f4, f5, f6, f7, f8);
+		char text[BUFSIZ];
+		snprintf(text, sizeof(text), fmtstring, f0, f1, f2, f3, f4, f5, f6, f7, f8);
+		ScriptConsolePrint(text);
 	}
 
 	return true;

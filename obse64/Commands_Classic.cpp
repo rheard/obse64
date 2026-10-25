@@ -370,7 +370,7 @@ static bool Cmd_DebugPrint_Execute(COMMAND_ARGS)
 	{
 		std::string text;
 		if(ExtractClassicFormatString(PASS_COMMAND_ARGS, &text))
-			Console_Print("%s", text.c_str());
+			ScriptConsolePrint(text.c_str());
 	}
 
 	return true;
@@ -384,7 +384,7 @@ static bool Cmd_PrintD_Execute(COMMAND_ARGS)
 	{
 		ObseExpression eval(PASS_COMMAND_ARGS);
 		if(eval.ExtractArgs() && eval.NumArgs() && eval.Arg(0).type == ObseExpression::Value::kType_String)
-			Console_Print("%s", eval.Arg(0).string.c_str());
+			ScriptConsolePrint(eval.Arg(0).string.c_str());
 	}
 
 	return true;
