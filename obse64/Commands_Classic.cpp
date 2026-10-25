@@ -342,6 +342,40 @@ static bool Cmd_GetGoldValue_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// A quest item is a base object with form flag 0x400 (TESForm::IsQuestItem). SetQuestItem also
+// marks the flags changed, so a save keeps the change, as vanilla SetQuestObject (0x06A1AEA0) does.
+static bool Cmd_IsQuestItem_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESForm * form = nullptr;
+	if(!ExtractArgs(EXTRACT_ARGS, &form)) return true;
+
+	form = FormArgOrBase(form, thisObj);
+	if(form && form->IsQuestItem())
+		*result = 1;
+
+	if(IsConsoleMode())
+		Console_Print("IsQuestItem >> %d", (int)*result);
+
+	return true;
+}
+
+static bool Cmd_SetQuestItem_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 questItem = 0;
+	TESForm * form = nullptr;
+	if(!ExtractArgs(EXTRACT_ARGS, &questItem, &form)) return true;
+
+	form = FormArgOrBase(form, thisObj);
+	if(form)
+		form->SetQuestItem(questItem != 0);
+
+	return true;
+}
+
 static ParamInfo kParams_OneOptionalNPC[1] =
 {
 	{	"npc", kParamType_NPC, 1 },
@@ -1036,6 +1070,32 @@ static ParamInfo kParams_OneOptionalInt[1] =
 	{	"int", kParamType_Integer, 1 },
 };
 
+static ParamInfo kParams_SetObjectInteger[2] =
+{
+	{	"value", kParamType_Integer, 0 },
+	{	"type", kParamType_InventoryObject, 1 },
+};
+
+static CommandInfo kCommandInfo_IsQuestItem =
+{
+	"IsQuestItem", "",
+	0,
+	"returns 1 if the object or calling reference is a quest item",
+	0,
+	1, kParams_OneOptionalInventoryObject,
+	Cmd_IsQuestItem_Execute
+};
+
+static CommandInfo kCommandInfo_SetQuestItem =
+{
+	"SetQuestItem", "",
+	0,
+	"Sets whether the specified object or object reference is a quest item.",
+	0,
+	2, kParams_SetObjectInteger,
+	Cmd_SetQuestItem_Execute
+};
+
 static CommandInfo kCommandInfo_SaveIP =
 {
 	"SaveIP", "",
@@ -1080,6 +1140,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetObjectCharge,	kRetnType_Default },
 	{ &kCommandInfo_GetEquippedCurrentCharge,	kRetnType_Default },
 	{ &kCommandInfo_ModEquippedCurrentCharge,	kRetnType_Default },
+	{ &kCommandInfo_IsQuestItem,	kRetnType_Default },
+	{ &kCommandInfo_SetQuestItem,	kRetnType_Default },
 	{ &kCommandInfo_SaveIP,			kRetnType_Default },
 	{ &kCommandInfo_RestoreIP,		kRetnType_Default },
 	{ &kCommandInfo_GetObjectType,	kRetnType_Default },

@@ -215,14 +215,14 @@ public:
 	virtual void Unk_1B();
 	virtual void Unk_1C();
 	virtual void Unk_1D();
-	virtual void Unk_1E();
+	virtual bool IsQuestItem();	// 1E flags & 0x400
 	virtual void Unk_1F();
 	virtual void Unk_20();
 	virtual void Unk_21();
 	virtual void Unk_22();
 	virtual void Unk_23();
 	virtual void Unk_24();
-	virtual void Unk_25();
+	virtual void SetQuestItem(bool isQuestItem);	// 25 sets or clears 0x400 and marks the flags changed
 	virtual void Unk_26();
 	virtual void Unk_27();
 	virtual void Unk_28();
