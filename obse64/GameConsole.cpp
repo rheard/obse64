@@ -48,6 +48,10 @@ void ScriptConsolePrint(const char * text)
 
 	*g_bConsoleOutputEnabled = outputEnabled;
 
+	// written out at once, so the lines before a crash aren't lost with it
 	if(s_logPrints)
+	{
 		_MESSAGE("console: %s", text);
+		DebugLog::flush();
+	}
 }
