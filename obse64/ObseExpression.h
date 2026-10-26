@@ -7,8 +7,8 @@
 // A first slice of classic OBSE's expression evaluator. Classic OBSE compiles the arguments of
 // commands such as TestExpr, PrintD and let in its own format: an argument count, then for
 // each argument a length and a postfix token stream. This evaluates numbers, strings, forms,
-// globals, number and ref variables, and command calls; operators and string or array
-// variables are reported as unsupported and fail the argument.
+// globals, number and ref variables, command calls and the pair operator (key::value); other
+// operators and string or array variables are reported as unsupported and fail the argument.
 class ObseExpression
 {
 public:
@@ -20,12 +20,14 @@ public:
 			kType_Number,
 			kType_String,
 			kType_Form,
+			kType_Pair,
 		};
 
 		Type		type = kType_Invalid;
 		double		number = 0;
 		u32			formID = 0;
 		std::string	string;
+		std::vector <Value>	pair;	// a pair's key and value
 	};
 
 	ObseExpression(COMMAND_ARGS);
@@ -39,6 +41,7 @@ public:
 private:
 	bool	Evaluate(Value * out);
 	bool	EvaluateCommand(Value * out);
+	bool	ApplyOperator(u8 op, std::vector <Value> * stack);
 	bool	ResolveForm(u16 refIdx, TESForm ** out);
 	bool	ReadGameNumber(const u8 * code, double * out);
 

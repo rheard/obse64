@@ -1,5 +1,6 @@
 #include "Commands_Classic.h"
 #include "CommandTable.h"
+#include "FunctionScripts.h"
 #include "GameConsole.h"
 #include "GameExtraData.h"
 #include "GameForms.h"
@@ -153,7 +154,7 @@ enum
 	kKeyQuery_Pressed =	1,
 };
 
-static bool IsControlDown(u32 control)
+bool IsControlDown(u32 control)
 {
 	if(control >= kControl_Count) return false;
 
@@ -551,6 +552,10 @@ extern CommandInfo kCommandInfo_sv_Construct;
 extern CommandInfo kCommandInfo_sv_Set;
 extern CommandInfo kCommandInfo_sv_Length;
 extern CommandInfo kCommandInfo_sv_SubString;
+
+// in Commands_Events.cpp, with the handlers they keep
+extern CommandInfo kCommandInfo_SetEventHandler;
+extern CommandInfo kCommandInfo_RemoveEventHandler;
 
 static CommandInfo kCommandInfo_IsOffLimits =
 {
@@ -2229,9 +2234,7 @@ static bool Cmd_RestoreIP_Execute(COMMAND_ARGS)
 	return true;
 }
 
-// classic OBSE compiles these commands' arguments with its own expression compiler, which
-// isn't ported: they run in mods' compiled scripts but can't be typed in the console yet
-static bool Cmd_Expression_Parse(u32 numParams, const ParamInfo * paramInfo, ScriptLineBuffer * lineBuf, ScriptBuffer * scriptBuf)
+bool Cmd_Expression_Parse(u32 numParams, const ParamInfo * paramInfo, ScriptLineBuffer * lineBuf, ScriptBuffer * scriptBuf)
 {
 	Console_Print("OBSE64 can't compile OBSE expressions yet, so this command only works in compiled scripts");
 	return false;
@@ -2536,6 +2539,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_FileExists,		kRetnType_Default },
 	{ &kCommandInfo_EquipItemNS,	kRetnType_Default },
 	{ &kCommandInfo_UnequipItemNS,	kRetnType_Default },
+	{ &kCommandInfo_SetEventHandler,	kRetnType_Default },
+	{ &kCommandInfo_RemoveEventHandler,	kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
@@ -2632,4 +2637,5 @@ void AddClassicCommands()
 	InstallGameLoadedHooks();
 	InstallItemMessageHook();
 	InstallStringVarHooks();
+	InstallUserFunctionBlock();
 }

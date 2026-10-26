@@ -123,6 +123,8 @@ source_group(
 		CommandTable.h
 		ObseExpression.cpp
 		ObseExpression.h
+		FunctionScripts.cpp
+		FunctionScripts.h
 		ParamInfos.cpp
 		ParamInfos.h
 		MersenneTwister.cpp
@@ -141,6 +143,7 @@ source_group(
 		Commands_Classic.cpp
 		Commands_Classic.h
 		Commands_String.cpp
+		Commands_Events.cpp
 		ClassicCommandTable.inl
 )
 

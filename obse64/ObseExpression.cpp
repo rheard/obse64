@@ -21,6 +21,12 @@ enum
 	kVarType_Ref =		4,
 };
 
+// classic OBSE's operators, compiled as their number in its OperatorType
+enum
+{
+	kOpType_MakePair =	36,	// key::value
+};
+
 ObseExpression::ObseExpression(COMMAND_ARGS) :
 	m_scriptData((const u8 *)scriptData),
 	m_opcodeOffsetPtr(opcodeOffsetPtr),
@@ -255,9 +261,13 @@ bool ObseExpression::Evaluate(Value * out)
 
 			default:
 				if(code < 'B')
-					Fail("operator %d is not supported yet", code);
-				else
-					Fail("unknown token type %02X", code);
+				{
+					// an operator takes its operands off the stack and leaves its result
+					if(!ApplyOperator(code, &stack)) return false;
+					continue;
+				}
+
+				Fail("unknown token type %02X", code);
 				return false;
 		}
 
@@ -360,6 +370,32 @@ bool ObseExpression::EvaluateCommand(Value * out)
 	}
 
 	return true;
+}
+
+bool ObseExpression::ApplyOperator(u8 op, std::vector <Value> * stack)
+{
+	switch(op)
+	{
+		case kOpType_MakePair:
+		{
+			if(stack->size() < 2)
+			{
+				Fail("'::' without a key and a value");
+				return false;
+			}
+
+			Value pair;
+			pair.type = Value::kType_Pair;
+			pair.pair.assign(stack->end() - 2, stack->end());
+
+			stack->resize(stack->size() - 2);
+			stack->push_back(pair);
+		}
+		return true;
+	}
+
+	Fail("operator %d is not supported yet", op);
+	return false;
 }
 
 // The form in entry refIdx of the script's reference list; false if there is no such entry. A

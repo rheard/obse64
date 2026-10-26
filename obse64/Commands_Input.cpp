@@ -1,3 +1,4 @@
+#include "Commands_Classic.h"
 #include "GameScript.h"
 #include "ParamInfos.h"
 #include <Windows.h>
@@ -14,7 +15,14 @@ public:
 	// while the game's window is in front.
 	bool Get(u32 keycode)
 	{
-		u32 virtualKey = VirtualKeyForKeycode(RemapMiceKeycodes(keycode));
+		return GetKey(RemapMiceKeycodes(keycode));
+	}
+
+	// A key by its own code, without classic's other codes for the mouse buttons (0xFF up), as
+	// a look at every key reads them, so a button isn't also seen as 0xFF.
+	bool GetKey(u32 keycode)
+	{
+		u32 virtualKey = VirtualKeyForKeycode(keycode);
 		return virtualKey && GameHasFocus() && (GetAsyncKeyState(virtualKey) & 0x8000);
 	}
 	void Tap(u32 keycode) { }
@@ -91,6 +99,11 @@ private:
 };
 
 static InputHook g_InputHook;
+
+bool IsKeycodeDown(u32 keycode)
+{
+	return g_InputHook.GetKey(keycode);
+}
 
 // deprecated
 
