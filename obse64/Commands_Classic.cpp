@@ -1322,7 +1322,7 @@ static TESForm * FormFromValue(double value)
 // 0x04883EA0, which builds its tables the first time (the byte at 0x09306CD0 says it has), and
 // FText::ToString (0x00E63E60) gives what it shows. Asked from the thread scripts run on, a "UI_"
 // key comes back right, but a "LOC_" key comes back as "<MISSING STRING TABLE ENTRY>": those are
-// left as they are.
+// left as they are, and MessageEX and MessageBoxEX have Unreal translate them.
 struct GameStdString	// the game's std::string, as the game reads one (MSVC's layout)
 {
 	union
@@ -1422,8 +1422,8 @@ static std::string DisplayName(TESForm * form)
 // other % takes the next argument as a number, as classic OBSE left those to sprintf. %n and %i
 // take a form, which a variable holds as its form ID's number. The ones that need a string or a
 // name table (%c %p %k %v %z) still use up their arguments, so later numbers line up, but print
-// "?" for now. False if there are too few arguments.
-static bool FormatClassicString(const char * fmt, const double * args, u32 numArgs, std::string * out)
+// "?" for now. False if there are too few arguments; numUsed receives how many it took.
+static bool FormatClassicString(const char * fmt, const double * args, u32 numArgs, std::string * out, u32 * numUsed)
 {
 	u32 argIdx = 0;
 	auto nextArg = [&](double * value)
@@ -1577,6 +1577,8 @@ static bool FormatClassicString(const char * fmt, const double * args, u32 numAr
 		}
 	}
 
+	*numUsed = argIdx;
+
 	return true;
 }
 
@@ -1605,10 +1607,11 @@ ParamInfo kParams_FormatString[21] =
 	{	"variable",			kParamType_Float,	1 },
 };
 
-// Reads a command's format string and up to 20 numbers, as classic OBSE's PrintToConsole does.
-// The numbers are read one at a time by the game's numeric argument reader, which keeps them as
-// doubles, so a ref variable's form ID comes through whole: ExtractArgs would round them to floats.
-bool ExtractClassicFormatString(COMMAND_ARGS, std::string * out)
+// Reads a command's format string and its numbers, as classic OBSE's PrintToConsole does: up to
+// 20 for the format string, and one more that some commands take after them. The numbers are read
+// one at a time by the game's numeric argument reader, which keeps them as doubles, so a ref
+// variable's form ID comes through whole: ExtractArgs would round them to floats.
+bool ExtractClassicFormatString(COMMAND_ARGS, std::string * out, std::vector <double> * rest)
 {
 	u32 offset = *opcodeOffsetPtr;
 	u32 end = offset + *(const u16 *)(scriptData + offset - 2);	// the arguments' length is just before them
@@ -1618,13 +1621,14 @@ bool ExtractClassicFormatString(COMMAND_ARGS, std::string * out)
 	u16 fmtLen = *(const u16 *)(scriptData + offset + 2);
 	offset += 4;
 
-	if(!numArgs || numArgs > 21 || offset + fmtLen > end) return false;
+	if(!numArgs || numArgs > 22 || offset + fmtLen > end) return false;
 
 	std::string fmt(scriptData + offset, fmtLen);
 	offset += fmtLen;
 
-	double args[20] = { 0 };
-	for(u32 i = 0; i < u32(numArgs - 1); i++)
+	double args[21] = { 0 };
+	u32 numNumbers = numArgs - 1;
+	for(u32 i = 0; i < numNumbers; i++)
 	{
 		if(offset >= end || !ExtractNumericArg(&args[i], scriptData, &offset, thisObj, containingObj, script, locals, true))
 			return false;
@@ -1632,7 +1636,13 @@ bool ExtractClassicFormatString(COMMAND_ARGS, std::string * out)
 
 	*opcodeOffsetPtr = offset;
 
-	return FormatClassicString(fmt.c_str(), args, numArgs - 1, out);
+	u32 numUsed = 0;
+	if(!FormatClassicString(fmt.c_str(), args, numNumbers, out, &numUsed)) return false;
+
+	if(rest)
+		rest->assign(args + numUsed, args + numNumbers);
+
+	return true;
 }
 
 static bool Cmd_DebugPrint_Execute(COMMAND_ARGS)
@@ -1670,6 +1680,170 @@ static bool Cmd_TestExpr_Execute(COMMAND_ARGS)
 	ObseExpression eval(PASS_COMMAND_ARGS);
 	if(eval.ExtractArgs() && eval.NumArgs())
 		*result = 1;
+
+	return true;
+}
+
+// The game's messages for Unreal (0x20 bytes) are a list of parts of 0x38 bytes, each a key and
+// named arguments. Unreal turns each part's key into text, formats its arguments into it
+// (FText::Format: {name}, with ` before a brace that's meant), and joins the parts. A string
+// argument that is a key gets translated there, on Unreal's thread, where its string tables can
+// be read (docs/script-engine.md, "Messages"). 0x0655A5A0 adds a part with one string argument,
+// as the game does for a disease's name; 0x04722180 destroys the parts. The game's Message and
+// MessageBox show such a message as a notification (0x0656C6B0) and a message box (0x06568C40).
+struct UIMessage
+{
+	u32		unk00;
+	void	* parts[3];	// begin, end, capacity
+};
+
+typedef void (* _UIMessage_AddPart)(UIMessage * message, const GameStdString * key, const char * argName, const char * argValue);
+static RelocAddr <_UIMessage_AddPart> UIMessage_AddPart(0x0655A5A0);
+
+typedef void (* _UIMessage_DestroyParts)(void ** parts);
+static RelocAddr <_UIMessage_DestroyParts> UIMessage_DestroyParts(0x04722180);
+
+typedef bool (* _QueueUIMessage)(UIMessage * message, void * unk, u32 notification, float duration);
+static RelocAddr <_QueueUIMessage> QueueUIMessage(0x0656C6B0);
+
+// the message, the callback that records the button pressed, flags, a button of its own (none
+// here), then the buttons, up to an empty one
+typedef bool (* _ShowMessageBox)(UIMessage * message, uintptr_t callback, u32 flags, const char * ownButton, ...);
+static RelocAddr <_ShowMessageBox> ShowMessageBox(0x06568C40);
+static RelocAddr <uintptr_t> kMessageBox_RecordButton(0x06A0DF40);
+
+// what GetButtonPressed reads: the form ID of the script's calling reference (or of the script),
+// and the button pressed, 0xFF until one is
+static RelocPtr <u32> g_messageBoxFormID(0x094800BC);
+static RelocPtr <u8> g_messageBoxButton(0x08FAB8F8);
+
+enum
+{
+	kMaxMessageBoxButtons =	10,
+	kRefFlag_Temporary =	0x4000,
+};
+
+static bool IsKeyChar(char c)
+{
+	return isalnum(u8(c)) || c == '_';
+}
+
+// text as FText::Format reads it literally
+static void AppendFormatEscaped(std::string * out, const std::string & text, size_t start, size_t end)
+{
+	for(size_t i = start; i < end; i++)
+	{
+		if(strchr("{}`", text[i]))
+			*out += '`';
+
+		*out += text[i];
+	}
+}
+
+// The text as a message for Unreal: each "LOC_" key in it ends a part, as that part's argument,
+// so Unreal shows it translated.
+static void BuildUIMessage(UIMessage * message, const std::string & text)
+{
+	auto addPart = [&](const std::string & pattern, const char * key)
+	{
+		GameStdString gamePattern = ToGameStdString(pattern.c_str());
+		UIMessage_AddPart(message, &gamePattern, "Key", key);
+	};
+
+	std::string pattern;
+	bool added = false;
+	size_t pos = 0;
+	for(size_t found = text.find("LOC_"); found != std::string::npos; found = text.find("LOC_", found + 1))
+	{
+		size_t end = found + 4;
+		while(end < text.size() && IsKeyChar(text[end]))
+			end++;
+
+		if((found > 0 && IsKeyChar(text[found - 1])) || end == found + 4) continue;
+
+		AppendFormatEscaped(&pattern, text, pos, found);
+		pattern += "{Key}";
+		addPart(pattern, text.substr(found, end - found).c_str());
+
+		pattern.clear();
+		added = true;
+		pos = end;
+		found = end - 1;
+	}
+
+	AppendFormatEscaped(&pattern, text, pos, text.size());
+	if(!pattern.empty() || !added)
+		addPart(pattern, "");
+}
+
+static bool Cmd_MessageEX_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	std::string text;
+	std::vector <double> rest;
+	if(!ExtractClassicFormatString(PASS_COMMAND_ARGS, &text, &rest)) return true;
+
+	// classic's optional duration in seconds follows the format string's numbers; without it, the
+	// game's Message uses 10
+	float duration = (!rest.empty() && rest[0] > 0) ? float(rest[0]) : 10.0f;
+
+	UIMessage message = {};
+	BuildUIMessage(&message, text);
+	QueueUIMessage(&message, nullptr, 1, duration);
+	UIMessage_DestroyParts(message.parts);
+
+	*result = 1;
+
+	return true;
+}
+
+static bool Cmd_MessageBoxEX_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	std::string text;
+	if(!ExtractClassicFormatString(PASS_COMMAND_ARGS, &text)) return true;
+
+	// "message|button|button...", up to ten buttons. With none the game adds its own "Done", and an
+	// empty one is left out, as the game would end the list of buttons there.
+	size_t bar = text.find('|');
+	std::string message = text.substr(0, bar);
+
+	std::vector <std::string> buttons;
+	while(bar != std::string::npos && buttons.size() < kMaxMessageBoxButtons)
+	{
+		size_t next = text.find('|', bar + 1);
+		std::string button = text.substr(bar + 1, (next == std::string::npos) ? std::string::npos : next - bar - 1);
+		if(!button.empty())
+			buttons.push_back(button);
+
+		bar = next;
+	}
+
+	// for GetButtonPressed, as the game's MessageBox does it: the calling reference, unless it's a
+	// temporary one or there's none (a quest's script, an item's), and then the script
+	if(thisObj && !(thisObj->flags & kRefFlag_Temporary))
+		*g_messageBoxFormID = thisObj->refID;
+	else if(script)
+		*g_messageBoxFormID = reinterpret_cast <TESForm *>(script)->refID;	// Script derives from TESForm
+	else
+		return true;
+
+	*g_messageBoxButton = 0xFF;
+
+	const char * b[kMaxMessageBoxButtons + 1] = { };
+	for(size_t i = 0; i < buttons.size(); i++)
+		b[i] = buttons[i].c_str();
+
+	if(buttons.empty())
+		b[0] = "LOC_HC_MenuGamesettings_sDone";
+
+	UIMessage box = {};
+	BuildUIMessage(&box, message);
+	ShowMessageBox(&box, kMessageBox_RecordButton.getUIntPtr(), 0, nullptr,
+		b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10]);
+	UIMessage_DestroyParts(box.parts);
 
 	return true;
 }
@@ -1848,6 +2022,26 @@ static CommandInfo kCommandInfo_TestExpr =
 	0, nullptr,
 	Cmd_TestExpr_Execute,
 	Cmd_Expression_Parse
+};
+
+static CommandInfo kCommandInfo_MessageEX =
+{
+	"MessageEX", "",
+	0,
+	"Prints a formatted message",
+	0,
+	21, kParams_FormatString,
+	Cmd_MessageEX_Execute
+};
+
+static CommandInfo kCommandInfo_MessageBoxEX =
+{
+	"MessageBoxEX", "",
+	0,
+	"Displays a formatted messagebox",
+	0,
+	21, kParams_FormatString,
+	Cmd_MessageBoxEX_Execute
 };
 
 static ParamInfo kParams_OneOptionalInt[1] =
@@ -2034,6 +2228,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_DebugPrint,		kRetnType_Default },
 	{ &kCommandInfo_PrintD,			kRetnType_Default },
 	{ &kCommandInfo_TestExpr,		kRetnType_Default },
+	{ &kCommandInfo_MessageEX,		kRetnType_Default },
+	{ &kCommandInfo_MessageBoxEX,	kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
