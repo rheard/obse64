@@ -545,6 +545,12 @@ extern CommandInfo kCommandInfo_GetObjectCharge;
 extern CommandInfo kCommandInfo_GetEquippedCurrentCharge;
 extern CommandInfo kCommandInfo_ModEquippedCurrentCharge;
 
+// in Commands_String.cpp, with the strings they keep
+extern CommandInfo kCommandInfo_sv_Construct;
+extern CommandInfo kCommandInfo_sv_Set;
+extern CommandInfo kCommandInfo_sv_Length;
+extern CommandInfo kCommandInfo_sv_SubString;
+
 static CommandInfo kCommandInfo_IsOffLimits =
 {
 	"IsOffLimits", "",
@@ -837,12 +843,6 @@ static bool Cmd_GetActiveMenuSelection_Execute(COMMAND_ARGS)
 		Console_Print("GetActiveMenuSelection >> %08X (%s)", selection, GetFullName(selection ? LookupFormByID(selection) : nullptr));
 
 	return true;
-}
-
-// a call at src to the function at dst, as the game was built
-static bool IsCallTo(uintptr_t src, uintptr_t dst)
-{
-	return *(const u8 *)src == 0xE8 && src + 5 + *(const s32 *)(src + 1) == dst;
 }
 
 static void InstallMagicMenuHooks()
@@ -1420,9 +1420,9 @@ static std::string DisplayName(TESForm * form)
 
 // Expands a classic OBSE format string. OBSE's own specifiers are replaced in place, and any
 // other % takes the next argument as a number, as classic OBSE left those to sprintf. %n and %i
-// take a form, which a variable holds as its form ID's number. The ones that need a string or a
-// name table (%c %p %k %v %z) still use up their arguments, so later numbers line up, but print
-// "?" for now. False if there are too few arguments; numUsed receives how many it took.
+// take a form, which a variable holds as its form ID's number, and %z a string variable. The ones
+// that need a name table (%c %p %k %v) still use up their arguments, so later numbers line up, but
+// print "?" for now. False if there are too few arguments; numUsed receives how many it took.
 static bool FormatClassicString(const char * fmt, const double * args, u32 numArgs, std::string * out, u32 * numUsed)
 {
 	u32 argIdx = 0;
@@ -1488,9 +1488,17 @@ static bool FormatClassicString(const char * fmt, const double * args, u32 numAr
 			}
 			break;
 
+			case 'z':
+			case 'Z':
+				// the string variable's text, nothing for a missing one
+				if(!nextArg(&value)) return false;
+				if(const std::string * str = LookupStringVar(u32(s64(value))))
+					*out += *str;
+				p++;
+				break;
+
 			case 'k': case 'K':
 			case 'v': case 'V':
-			case 'z': case 'Z':
 				if(!nextArg(&value)) return false;
 				*out += '?';
 				p++;
@@ -2353,6 +2361,10 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_MessageEX,		kRetnType_Default },
 	{ &kCommandInfo_MessageBoxEX,	kRetnType_Default },
 	{ &kCommandInfo_RunBatchScript,	kRetnType_Default },
+	{ &kCommandInfo_sv_Construct,	kRetnType_String },
+	{ &kCommandInfo_sv_Set,			kRetnType_Default },
+	{ &kCommandInfo_sv_Length,		kRetnType_Default },
+	{ &kCommandInfo_sv_SubString,	kRetnType_String },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
@@ -2448,4 +2460,5 @@ void AddClassicCommands()
 	InstallMagicMenuHooks();
 	InstallGameLoadedHooks();
 	InstallItemMessageHook();
+	InstallStringVarHooks();
 }

@@ -140,6 +140,7 @@ source_group(
 		Commands_MiscReference.cpp
 		Commands_Classic.cpp
 		Commands_Classic.h
+		Commands_String.cpp
 		ClassicCommandTable.inl
 )
 
