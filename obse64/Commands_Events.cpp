@@ -163,12 +163,17 @@ static void SendInputEvent(u32 event, s32 code, s32 action)
 			matching.push_back(handler);
 	}
 
+	std::vector <ObseExpression::Value> args(2);
+	args[0].type = args[1].type = ObseExpression::Value::kType_Number;
+	args[0].number = code;
+	args[1].number = action;
+
 	for(const auto & handler : matching)
 	{
 		// a handler can remove another before its turn
 		if(std::find(handlers.begin(), handlers.end(), handler) == handlers.end()) continue;
 
-		CallUserFunction(handler.script, nullptr, { double(code), double(action) });
+		CallUserFunction(handler.script, nullptr, nullptr, args);
 	}
 }
 

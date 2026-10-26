@@ -566,6 +566,10 @@ extern CommandInfo kCommandInfo_RemoveEventHandler;
 extern CommandInfo kCommandInfo_GetNumKeysPressed;
 extern CommandInfo kCommandInfo_GetKeyPress;
 
+// in FunctionScripts.cpp, with the calls they make
+extern CommandInfo kCommandInfo_Call;
+extern CommandInfo kCommandInfo_SetFunctionValue;
+
 static CommandInfo kCommandInfo_IsOffLimits =
 {
 	"IsOffLimits", "",
@@ -2663,6 +2667,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_TapControl,		kRetnType_Default },
 	{ &kCommandInfo_GetNumKeysPressed,	kRetnType_Default },
 	{ &kCommandInfo_GetKeyPress,	kRetnType_Default },
+	{ &kCommandInfo_Call,			kRetnType_Ambiguous },
+	{ &kCommandInfo_SetFunctionValue,	kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)

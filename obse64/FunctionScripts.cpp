@@ -1,11 +1,15 @@
 #include "FunctionScripts.h"
+#include "Commands_Classic.h"
 #include "GameForms.h"
+#include "GameRTTI.h"
 #include "obse64_common/Log.h"
 #include "obse64_common/Relocation.h"
 #include "obse64_common/SafeWrite.h"
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <set>
+#include <string>
 
 // A script's locals (classic's ScriptEventList, 0x28 bytes). Its variables are a list at +0x18,
 // each with its index and its value. The game builds a script's locals with 0x0662EB70, and takes
@@ -91,8 +95,15 @@ struct UserFunction
 	u32							running = 0;		// calls not yet returned
 };
 
+// a function being called, and what it gave SetFunctionValue
+struct FunctionCall
+{
+	Script					* script;
+	ObseExpression::Value	result;
+};
+
 static std::map <Script *, UserFunction>	s_functions;
-static std::vector <Script *>				s_callStack;	// function scripts being called, innermost last
+static std::vector <FunctionCall>			s_callStack;	// innermost last
 
 // A function script's parameters, from its Begin Function. After ScriptName (opcode 0x1D, no data)
 // comes Begin (0x10) and its length, the block type and the block's length, then classic OBSE's
@@ -123,20 +134,45 @@ static bool ReadFunctionParams(Script * script, std::vector <FunctionParam> * ou
 	return true;
 }
 
-static void SetVariable(ScriptLocals * locals, const FunctionParam & param, double value)
+// sets a parameter's variable from its argument, which is left alone if it doesn't fit, as classic did
+static void SetVariable(ScriptLocals * locals, const FunctionParam & param, const ObseExpression::Value & arg, u32 scriptID)
 {
+	double value = 0;
+
+	switch(param.varType)
+	{
+		case kVarType_Integer:
+		case kVarType_Float:
+			if(arg.type != ObseExpression::Value::kType_Number) return;
+			value = (param.varType == kVarType_Integer) ? floor(arg.number) : arg.number;
+			break;
+
+		case kVarType_Ref:
+			// forms are kept as their form ID
+			if(arg.type == ObseExpression::Value::kType_Form)
+				value = arg.formID;
+			else if(arg.type == ObseExpression::Value::kType_Number)
+				value = arg.number;
+			else
+				return;
+			break;
+
+		default:
+		{
+			static std::set <u32> s_reported;
+			if(s_reported.insert(scriptID).second)
+				_MESSAGE("function script %08X takes a string or array parameter, which isn't supported yet", scriptID);
+		}
+		return;
+	}
+
 	for(auto * node = reinterpret_cast <ScriptLocalsLayout *>(locals)->vars; node; node = node->next)
 	{
-		if(!node->var || node->var->idx != param.varIdx) continue;
-
-		switch(param.varType)
+		if(node->var && node->var->idx == param.varIdx)
 		{
-			case kVarType_Integer:	node->var->value = floor(value);	break;
-			case kVarType_Float:	node->var->value = value;			break;
-			case kVarType_Ref:		node->var->value = value;			break;	// forms are kept as their form ID
+			node->var->value = value;
+			return;
 		}
-
-		return;
 	}
 }
 
@@ -159,7 +195,8 @@ static void FreeLocals(ScriptLocals * locals)
 		*g_lastLocalsSearched = nullptr;
 }
 
-bool CallUserFunction(Script * script, TESObjectREFR * thisObj, const std::vector <double> & args)
+bool CallUserFunction(Script * script, TESObjectREFR * thisObj, TESObjectREFR * containingObj,
+	const std::vector <ObseExpression::Value> & args, ObseExpression::Value * result)
 {
 	if(!script) return false;
 
@@ -202,12 +239,17 @@ bool CallUserFunction(Script * script, TESObjectREFR * thisObj, const std::vecto
 	}
 
 	for(u32 i = 0; i < fn.params.size() && i < args.size(); i++)
-		SetVariable(locals, fn.params[i], args[i]);
+		SetVariable(locals, fn.params[i], args[i], scriptID);
 
 	fn.running++;
-	s_callStack.push_back(script);
+	s_callStack.push_back({ script });
 
-	bool ran = Script_Execute(script, thisObj, locals, nullptr, false);
+	// what Execute returns is the runner's byte at +0xB9, which it clears as it starts, not whether
+	// the script ran; classic didn't look at it either
+	Script_Execute(script, thisObj, locals, containingObj, false);
+
+	if(result)
+		*result = s_callStack.back().result;
 
 	s_callStack.pop_back();
 	fn.running--;
@@ -215,12 +257,12 @@ bool CallUserFunction(Script * script, TESObjectREFR * thisObj, const std::vecto
 	if(temporary)
 		FreeLocals(locals);
 
-	return ran;
+	return true;
 }
 
 static bool Cmd_FunctionBlock_Execute(COMMAND_ARGS)
 {
-	*result = (!s_callStack.empty() && s_callStack.back() == script) ? 1 : 0;
+	*result = (!s_callStack.empty() && s_callStack.back().script == script) ? 1 : 0;
 
 	return true;
 }
@@ -237,3 +279,82 @@ void InstallUserFunctionBlock()
 	safeWrite8(uintptr_t(&info->needsParent), 0);
 	safeWrite64(uintptr_t(&info->execute), u64(&Cmd_FunctionBlock_Execute));
 }
+
+// Call function [arguments]: runs the function on the calling reference, and gives what it returned
+static bool Cmd_Call_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	ObseExpression eval(PASS_COMMAND_ARGS);
+	ObseExpression::Value function;
+	if(!eval.ExtractCallArgs(&function)) return true;
+
+	TESForm * form = (function.type == ObseExpression::Value::kType_Form && function.formID) ? LookupFormByID(function.formID) : nullptr;
+	Script * functionScript = form ? DYNAMIC_CAST(form, TESForm, Script) : nullptr;
+	if(!functionScript) return true;
+
+	std::vector <ObseExpression::Value> args;
+	for(u32 i = 0; i < eval.NumArgs(); i++)
+		args.push_back(eval.Arg(i));
+
+	ObseExpression::Value returned;
+	if(!CallUserFunction(functionScript, thisObj, containingObj, args, &returned)) return true;
+
+	switch(returned.type)
+	{
+		case ObseExpression::Value::kType_Number:
+			*result = returned.number;
+			break;
+
+		case ObseExpression::Value::kType_Form:
+			SetFormResult(result, returned.formID);
+			break;
+
+		case ObseExpression::Value::kType_String:
+		{
+			// Script derives from TESForm
+			static std::set <u32> s_reported;
+			if(s_reported.insert(reinterpret_cast <TESForm *>(functionScript)->refID).second)
+				_MESSAGE("function script %08X returned a string, which Call can't give yet", reinterpret_cast <TESForm *>(functionScript)->refID);
+		}
+		break;
+	}
+
+	return true;
+}
+
+// SetFunctionValue value: what the function script running returns
+static bool Cmd_SetFunctionValue_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	ObseExpression eval(PASS_COMMAND_ARGS);
+	if(!eval.ExtractArgs() || eval.NumArgs() != 1) return true;
+
+	if(!s_callStack.empty() && s_callStack.back().script == script)
+		s_callStack.back().result = eval.Arg(0);
+
+	return true;
+}
+
+CommandInfo kCommandInfo_Call =
+{
+	"Call", "",
+	0,
+	"calls a user-defined function",
+	0,
+	0, nullptr,
+	Cmd_Call_Execute,
+	Cmd_Expression_Parse
+};
+
+CommandInfo kCommandInfo_SetFunctionValue =
+{
+	"SetFunctionValue", "",
+	0,
+	"returns a value from a user-defined function",
+	0,
+	0, nullptr,
+	Cmd_SetFunctionValue_Execute,
+	Cmd_Expression_Parse
+};

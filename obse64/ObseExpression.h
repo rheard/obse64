@@ -35,11 +35,15 @@ public:
 	// evaluates every argument; false on the first error
 	bool	ExtractArgs();
 
+	// a Call's: the function, then its arguments
+	bool	ExtractCallArgs(Value * function);
+
 	u32				NumArgs() const { return u32(m_args.size()); }
 	const Value &	Arg(u32 idx) const { return m_args[idx]; }
 
 private:
 	bool	Evaluate(Value * out);
+	bool	ReadToken(const u8 * end, std::vector <Value> * stack);
 	bool	EvaluateCommand(Value * out);
 	bool	ApplyOperator(u8 op, std::vector <Value> * stack);
 	bool	ResolveForm(u16 refIdx, TESForm ** out);

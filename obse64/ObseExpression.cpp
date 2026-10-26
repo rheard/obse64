@@ -114,164 +114,7 @@ bool ObseExpression::Evaluate(Value * out)
 
 	while(m_data < argEnd)
 	{
-		u8 code = 0;
-		Read(&code);
-
-		Value value;
-
-		switch(code)
-		{
-			case 'B':
-			case 'b':
-			{
-				u8 num;
-				if(!Read(&num)) return false;
-				value.type = Value::kType_Number;
-				value.number = num;
-			}
-			break;
-
-			case 'I':
-			case 'i':
-			{
-				u16 num;
-				if(!Read(&num)) return false;
-				value.type = Value::kType_Number;
-				value.number = num;
-			}
-			break;
-
-			case 'L':
-			case 'l':
-			{
-				u32 num;
-				if(!Read(&num)) return false;
-				value.type = Value::kType_Number;
-				value.number = num;
-			}
-			break;
-
-			case 'Z':
-				if(!Read(&value.number)) return false;
-				value.type = Value::kType_Number;
-				break;
-
-			case 'S':
-			{
-				u16 len;
-				if(!Read(&len)) return false;
-
-				if(m_data + len > argEnd)
-				{
-					Fail("string runs past the end of its argument");
-					return false;
-				}
-
-				value.type = Value::kType_String;
-				value.string.assign((const char *)m_data, len);
-				m_data += len;
-			}
-			break;
-
-			case 'X':
-				if(!EvaluateCommand(&value)) return false;
-				break;
-
-			case 'R':
-			{
-				// a form from the script's reference list, which may be a ref variable
-				u16 refIdx;
-				if(!Read(&refIdx)) return false;
-
-				TESForm * form = nullptr;
-				if(!ResolveForm(refIdx, &form))
-				{
-					Fail("ref %d is not in the script's reference list", refIdx);
-					return false;
-				}
-
-				value.type = Value::kType_Form;
-				value.formID = form ? form->refID : 0;
-			}
-			break;
-
-			case 'G':
-			{
-				u16 refIdx;
-				if(!Read(&refIdx)) return false;
-
-				// the game's own token for a global is the same
-				const u8 code[] = { 'G', u8(refIdx), u8(refIdx >> 8) };
-				if(!ReadGameNumber(code, &value.number))
-				{
-					Fail("global %d could not be read", refIdx);
-					return false;
-				}
-
-				value.type = Value::kType_Number;
-			}
-			break;
-
-			case 'V':
-			{
-				u8 varType;
-				u16 refIdx, varIdx;
-				if(!Read(&varType) || !Read(&refIdx) || !Read(&varIdx)) return false;
-
-				if(varType != kVarType_Float && varType != kVarType_Integer && varType != kVarType_Ref)
-				{
-					Fail("%s variables are not supported yet",
-						varType == kVarType_String ? "string" : (varType == kVarType_Array ? "array" : "unknown"));
-					return false;
-				}
-
-				// in the game's own tokens: 'f' and the variable's index, after 'r' and a
-				// reference's index for a variable of another script (a quest's or a reference's)
-				u8 code[6];
-				u32 len = 0;
-				if(refIdx)
-				{
-					code[len++] = 'r';
-					code[len++] = u8(refIdx);
-					code[len++] = u8(refIdx >> 8);
-				}
-				code[len++] = 'f';
-				code[len++] = u8(varIdx);
-				code[len++] = u8(varIdx >> 8);
-
-				double number = 0;
-				if(!ReadGameNumber(code, &number))
-				{
-					Fail("variable %d could not be read", varIdx);
-					return false;
-				}
-
-				if(varType == kVarType_Ref)
-				{
-					value.type = Value::kType_Form;
-					value.formID = FormIDFromValue(number);
-				}
-				else
-				{
-					value.type = Value::kType_Number;
-					value.number = number;
-				}
-			}
-			break;
-
-			default:
-				if(code < 'B')
-				{
-					// an operator takes its operands off the stack and leaves its result
-					if(!ApplyOperator(code, &stack)) return false;
-					continue;
-				}
-
-				Fail("unknown token type %02X", code);
-				return false;
-		}
-
-		stack.push_back(value);
+		if(!ReadToken(argEnd, &stack)) return false;
 	}
 
 	if(stack.size() != 1)
@@ -283,6 +126,204 @@ bool ObseExpression::Evaluate(Value * out)
 	*out = stack.back();
 
 	return true;
+}
+
+// Reads one token, which ends before end: a value goes on the stack, and an operator takes its
+// operands off the stack and leaves its result there.
+bool ObseExpression::ReadToken(const u8 * end, std::vector <Value> * stack)
+{
+	u8 code = 0;
+	if(!Read(&code)) return false;
+
+	Value value;
+
+	switch(code)
+	{
+		case 'B':
+		case 'b':
+		{
+			u8 num;
+			if(!Read(&num)) return false;
+			value.type = Value::kType_Number;
+			value.number = num;
+		}
+		break;
+
+		case 'I':
+		case 'i':
+		{
+			u16 num;
+			if(!Read(&num)) return false;
+			value.type = Value::kType_Number;
+			value.number = num;
+		}
+		break;
+
+		case 'L':
+		case 'l':
+		{
+			u32 num;
+			if(!Read(&num)) return false;
+			value.type = Value::kType_Number;
+			value.number = num;
+		}
+		break;
+
+		case 'Z':
+			if(!Read(&value.number)) return false;
+			value.type = Value::kType_Number;
+			break;
+
+		case 'S':
+		{
+			u16 len;
+			if(!Read(&len)) return false;
+
+			if(m_data + len > end)
+			{
+				Fail("string runs past the end of its argument");
+				return false;
+			}
+
+			value.type = Value::kType_String;
+			value.string.assign((const char *)m_data, len);
+			m_data += len;
+		}
+		break;
+
+		case 'X':
+			if(!EvaluateCommand(&value)) return false;
+			break;
+
+		case 'R':
+		{
+			// a form from the script's reference list, which may be a ref variable
+			u16 refIdx;
+			if(!Read(&refIdx)) return false;
+
+			TESForm * form = nullptr;
+			if(!ResolveForm(refIdx, &form))
+			{
+				Fail("ref %d is not in the script's reference list", refIdx);
+				return false;
+			}
+
+			value.type = Value::kType_Form;
+			value.formID = form ? form->refID : 0;
+		}
+		break;
+
+		case 'G':
+		{
+			u16 refIdx;
+			if(!Read(&refIdx)) return false;
+
+			// the game's own token for a global is the same
+			const u8 code[] = { 'G', u8(refIdx), u8(refIdx >> 8) };
+			if(!ReadGameNumber(code, &value.number))
+			{
+				Fail("global %d could not be read", refIdx);
+				return false;
+			}
+
+			value.type = Value::kType_Number;
+		}
+		break;
+
+		case 'V':
+		{
+			u8 varType;
+			u16 refIdx, varIdx;
+			if(!Read(&varType) || !Read(&refIdx) || !Read(&varIdx)) return false;
+
+			if(varType != kVarType_Float && varType != kVarType_Integer && varType != kVarType_Ref)
+			{
+				Fail("%s variables are not supported yet",
+					varType == kVarType_String ? "string" : (varType == kVarType_Array ? "array" : "unknown"));
+				return false;
+			}
+
+			// in the game's own tokens: 'f' and the variable's index, after 'r' and a
+			// reference's index for a variable of another script (a quest's or a reference's)
+			u8 code[6];
+			u32 len = 0;
+			if(refIdx)
+			{
+				code[len++] = 'r';
+				code[len++] = u8(refIdx);
+				code[len++] = u8(refIdx >> 8);
+			}
+			code[len++] = 'f';
+			code[len++] = u8(varIdx);
+			code[len++] = u8(varIdx >> 8);
+
+			double number = 0;
+			if(!ReadGameNumber(code, &number))
+			{
+				Fail("variable %d could not be read", varIdx);
+				return false;
+			}
+
+			if(varType == kVarType_Ref)
+			{
+				value.type = Value::kType_Form;
+				value.formID = FormIDFromValue(number);
+			}
+			else
+			{
+				value.type = Value::kType_Number;
+				value.number = number;
+			}
+		}
+		break;
+
+		default:
+			if(code < 'B')
+				return ApplyOperator(code, stack);
+
+			Fail("unknown token type %02X", code);
+			return false;
+	}
+
+	stack->push_back(value);
+
+	return true;
+}
+
+// A Call's arguments: classic's version byte, then the function (0: a single token, 1: an
+// expression), then the arguments, as ExtractArgs reads them.
+bool ObseExpression::ExtractCallArgs(Value * function)
+{
+	u8 version = 0;
+	if(!Read(&version)) return false;
+
+	switch(version)
+	{
+		case 0:
+		{
+			std::vector <Value> stack;
+			if(!ReadToken(m_end, &stack)) return false;
+
+			if(stack.size() != 1)
+			{
+				Fail("Call's function is not a value");
+				return false;
+			}
+
+			*function = stack.back();
+		}
+		break;
+
+		case 1:
+			if(!Evaluate(function)) return false;
+			break;
+
+		default:
+			Fail("unknown Call version %d", version);
+			return false;
+	}
+
+	return ExtractArgs();
 }
 
 bool ObseExpression::EvaluateCommand(Value * out)
