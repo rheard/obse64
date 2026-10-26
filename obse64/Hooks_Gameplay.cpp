@@ -1,5 +1,6 @@
 #include "Hooks_Gameplay.h"
 #include "Commands_Classic.h"
+#include "PlayerControls.h"
 #include "obse64_common/BranchTrampoline.h"
 #include "obse64_common/Relocation.h"
 
@@ -12,9 +13,10 @@ void OblivionThreadHook(const char * dbgStr)
 	ProcessInputEvents();
 }
 
+// once each Unreal frame, early in it, on the game thread
 void UnrealGameThreadHook()
 {
-
+	PlayerControls_Update();
 }
 
 void Hooks_Gameplay_Apply()

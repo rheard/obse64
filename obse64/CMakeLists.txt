@@ -125,6 +125,8 @@ source_group(
 		ObseExpression.h
 		FunctionScripts.cpp
 		FunctionScripts.h
+		PlayerControls.cpp
+		PlayerControls.h
 		ParamInfos.cpp
 		ParamInfos.h
 		MersenneTwister.cpp

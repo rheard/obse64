@@ -10,6 +10,7 @@
 #include "Hooks_Script.h"
 #include "ObseExpression.h"
 #include "ParamInfos.h"
+#include "PlayerControls.h"
 #include "obse64_common/BranchTrampoline.h"
 #include "obse64_common/Log.h"
 #include <cctype>
@@ -157,6 +158,10 @@ enum
 bool IsControlDown(u32 control)
 {
 	if(control >= kControl_Count) return false;
+
+	// one Unreal handles itself
+	bool down = false;
+	if(PlayerControls_GetDown(control, &down)) return down;
 
 	u8 * osGlobals = *g_osGlobals;
 	void * controls = osGlobals ? *(void **)(osGlobals + 0x30) : nullptr;
@@ -635,6 +640,93 @@ static CommandInfo kCommandInfo_OnControlDown =
 	0,
 	1, kParams_OneInt,
 	Cmd_OnControlDown_Execute
+};
+
+// Classic disabled and tapped the key a control was bound to. The Remastered's bindings are
+// Unreal's, so these act on the control itself, where it's one Unreal handles on its own
+// (PlayerControls.cpp): movement, Run (sprinting) and Always Run (the walk toggle), which is the
+// only one that can be tapped. For any other, they do nothing, and say so once.
+static void ReportControlCommand(const char * command, u32 control)
+{
+	static std::set <std::string> s_reported;
+
+	char key[64];
+	sprintf_s(key, "%s %u", command, control);
+
+	if(s_reported.insert(key).second)
+		_MESSAGE("%s %u: not supported for that control yet", command, control);
+}
+
+static bool Cmd_DisableControl_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 control = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &control)) return true;
+
+	if(!PlayerControls_SetDisabled(control, true))
+		ReportControlCommand("DisableControl", control);
+
+	return true;
+}
+
+static bool Cmd_EnableControl_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 control = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &control)) return true;
+
+	if(!PlayerControls_SetDisabled(control, false))
+		ReportControlCommand("EnableControl", control);
+
+	return true;
+}
+
+// 1 if the control was tapped
+static bool Cmd_TapControl_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 control = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &control)) return true;
+
+	if(PlayerControls_Tap(control))
+		*result = 1;
+	else
+		ReportControlCommand("TapControl", control);
+
+	return true;
+}
+
+static CommandInfo kCommandInfo_DisableControl =
+{
+	"DisableControl", "",
+	0,
+	"disables the key associated with the specified control",
+	0,
+	1, kParams_OneInt,
+	Cmd_DisableControl_Execute
+};
+
+static CommandInfo kCommandInfo_EnableControl =
+{
+	"EnableControl", "",
+	0,
+	"enables the key associated with the specified control",
+	0,
+	1, kParams_OneInt,
+	Cmd_EnableControl_Execute
+};
+
+static CommandInfo kCommandInfo_TapControl =
+{
+	"TapControl", "",
+	0,
+	"taps the key associated with the specified control",
+	0,
+	1, kParams_OneInt,
+	Cmd_TapControl_Execute
 };
 
 static CommandInfo kCommandInfo_GetObjectType =
@@ -2541,6 +2633,9 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_UnequipItemNS,	kRetnType_Default },
 	{ &kCommandInfo_SetEventHandler,	kRetnType_Default },
 	{ &kCommandInfo_RemoveEventHandler,	kRetnType_Default },
+	{ &kCommandInfo_DisableControl,	kRetnType_Default },
+	{ &kCommandInfo_EnableControl,	kRetnType_Default },
+	{ &kCommandInfo_TapControl,		kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
@@ -2638,4 +2733,5 @@ void AddClassicCommands()
 	InstallItemMessageHook();
 	InstallStringVarHooks();
 	InstallUserFunctionBlock();
+	PlayerControls_Install();
 }
