@@ -19,6 +19,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <Windows.h>
 
 // Classic OBSE commands past release 6, registered at their classic opcodes (from
 // ClassicCommandTable.inl) so scripts compiled against classic OBSE call the right
@@ -970,6 +971,23 @@ static bool Cmd_GetGameLoaded_Execute(COMMAND_ARGS)
 
 	if(IsConsoleMode())
 		Console_Print("GetGameLoaded >> %d", (int)*result);
+
+	return true;
+}
+
+// 1 the first time each script asks after the game starts, and never after a load
+static bool Cmd_GetGameRestarted_Execute(COMMAND_ARGS)
+{
+	static std::set <u32> s_informed;	// script form IDs told since the game started
+
+	*result = 0;
+
+	// Script derives from TESForm
+	if(script && s_informed.insert(reinterpret_cast <TESForm *>(script)->refID).second)
+		*result = 1;
+
+	if(IsConsoleMode())
+		Console_Print("GetGameRestarted >> %d", (int)*result);
 
 	return true;
 }
@@ -2000,6 +2018,34 @@ static bool Cmd_RunBatchScript_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// Classic asked the game's file finder, relative to Oblivion's folder, which also looks in the
+// BSA archives. This looks for a loose file only, in Content\Dev\ObvData first, as RunBatchScript
+// opens one.
+static bool Cmd_FileExists_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	char fileName[BUFSIZ] = { 0 };
+	if(!ExtractArgs(EXTRACT_ARGS, &fileName)) return true;
+
+	std::string inDataFolder = getRuntimeDirectory() + "..\\..\\Content\\Dev\\ObvData\\" + fileName;
+
+	for(const char * path : { inDataFolder.c_str(), (const char *)fileName })
+	{
+		DWORD attributes = GetFileAttributesA(path);
+		if(attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY))
+		{
+			*result = 1;
+			break;
+		}
+	}
+
+	if(IsConsoleMode())
+		Console_Print("FileExists >> %d", (int)*result);
+
+	return true;
+}
+
 // The game's script runner (0xC0 bytes, built by 0x0694C7C0). ScriptRunner::Run (0x0694D6D0) steps
 // through a script's statements and has 0x0694C810 run each one. The runner keeps the if/else
 // nesting: a depth, and for each level 1 while inside an if and 2 once one of its branches ran.
@@ -2196,6 +2242,21 @@ static CommandInfo kCommandInfo_MessageBoxEX =
 	Cmd_MessageBoxEX_Execute
 };
 
+static ParamInfo kParams_OneString[1] =
+{
+	{	"string", kParamType_String, 0 },
+};
+
+static CommandInfo kCommandInfo_FileExists =
+{
+	"FileExists", "",
+	0,
+	"returns true if the specified file exists",
+	0,
+	1, kParams_OneString,
+	Cmd_FileExists_Execute
+};
+
 static CommandInfo kCommandInfo_RunBatchScript =
 {
 	"RunBatchScript", "",
@@ -2329,6 +2390,16 @@ static CommandInfo kCommandInfo_GetGameLoaded =
 	Cmd_GetGameLoaded_Execute
 };
 
+static CommandInfo kCommandInfo_GetGameRestarted =
+{
+	"GetGameRestarted", "",
+	0,
+	"returns 1 the first time the calling script asks after the game starts",
+	0,
+	0, nullptr,
+	Cmd_GetGameRestarted_Execute
+};
+
 struct PortedCommand
 {
 	const CommandInfo	* info;
@@ -2398,6 +2469,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_sv_Length,		kRetnType_Default },
 	{ &kCommandInfo_sv_SubString,	kRetnType_String },
 	{ &kCommandInfo_GetRider,		kRetnType_Form },
+	{ &kCommandInfo_GetGameRestarted,	kRetnType_Default },
+	{ &kCommandInfo_FileExists,		kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
