@@ -1316,6 +1316,108 @@ static TESForm * FormFromValue(double value)
 	return formID ? LookupFormByID(formID) : nullptr;
 }
 
+// Many of the Remastered's names are keys that Unreal turns into the text it shows: "LOC_" ones
+// from its string tables (LOC_FN_Phintias), "UI_" ones from its table of text the player typed
+// (the player's name). 0x04883D70 makes Unreal's text for a key in a std::string, through
+// 0x04883EA0, which builds its tables the first time (the byte at 0x09306CD0 says it has), and
+// FText::ToString (0x00E63E60) gives what it shows. Asked from the thread scripts run on, a "UI_"
+// key comes back right, but a "LOC_" key comes back as "<MISSING STRING TABLE ENTRY>": those are
+// left as they are.
+struct GameStdString	// the game's std::string, as the game reads one (MSVC's layout)
+{
+	union
+	{
+		char		buf[16];
+		const char	* ptr;	// once capacity passes 15
+	};
+	u64	size;
+	u64	capacity;
+};
+
+// text, as a std::string the game only reads; it points into text when longer than 15 characters
+static GameStdString ToGameStdString(const char * text)
+{
+	GameStdString str = {};
+	str.size = strlen(text);
+	if(str.size < sizeof(str.buf))
+	{
+		memcpy(str.buf, text, str.size + 1);
+		str.capacity = sizeof(str.buf) - 1;
+	}
+	else
+	{
+		str.ptr = text;
+		str.capacity = str.size;
+	}
+
+	return str;
+}
+
+struct UnrealText	// FText: a thread-safe shared pointer to its data, then flags
+{
+	void	* data;
+	u8		* referenceController;	// shared count at +8, weak count at +0xC
+	u32		flags;
+	u32		pad;
+};
+
+struct UnrealString	// FString
+{
+	const wchar_t	* data;
+	s32				length;	// counting the terminator
+	s32				capacity;
+};
+
+typedef UnrealText * (* _TextFromKey)(UnrealText * out, const GameStdString * key);
+static RelocAddr <_TextFromKey> TextFromKey(0x04883D70);
+
+typedef const UnrealString * (* _Text_ToString)(const UnrealText * text);
+static RelocAddr <_Text_ToString> Text_ToString(0x00E63E60);
+
+static RelocPtr <u8> g_textKeyTablesBuilt(0x09306CD0);
+
+static void ReleaseText(UnrealText * text)
+{
+	u8 * controller = text->referenceController;
+	if(!controller) return;
+
+	auto ** vtable = *reinterpret_cast <void ***>(controller);
+	if(_InterlockedDecrement(reinterpret_cast <volatile long *>(controller + 8)) == 0)
+	{
+		reinterpret_cast <void (*)(void *)>(vtable[0])(controller);	// destroys the data
+		if(_InterlockedDecrement(reinterpret_cast <volatile long *>(controller + 0xC)) == 0)
+			reinterpret_cast <void (*)(void *, u32)>(vtable[1])(controller, 1);	// and itself
+	}
+}
+
+// A form's name, with a "UI_" key turned into the text the game shows (characters past Latin-1
+// become '?'); a "LOC_" key stays a key
+static std::string DisplayName(TESForm * form)
+{
+	const char * name = GetFullName(form);
+	if(strncmp(name, "UI_", 3) || !*g_textKeyTablesBuilt) return name;
+
+	GameStdString key = ToGameStdString(name);
+
+	UnrealText text = {};
+	TextFromKey(&text, &key);
+
+	std::string shown;
+	if(text.data)
+	{
+		const UnrealString * str = Text_ToString(&text);
+		if(str && str->data)
+		{
+			for(s32 i = 0; i < str->length - 1 && str->data[i]; i++)
+				shown += (str->data[i] < 0x100) ? char(str->data[i]) : '?';
+		}
+	}
+
+	ReleaseText(&text);
+
+	return shown.empty() ? name : shown;
+}
+
 // Expands a classic OBSE format string. OBSE's own specifiers are replaced in place, and any
 // other % takes the next argument as a number, as classic OBSE left those to sprintf. %n and %i
 // take a form, which a variable holds as its form ID's number. The ones that need a string or a
@@ -1365,9 +1467,9 @@ static bool FormatClassicString(const char * fmt, const double * args, u32 numAr
 
 			case 'n':
 			case 'N':
-				// the form's name
+				// the form's name, as the game shows it
 				if(!nextArg(&value)) return false;
-				*out += GetFullName(FormFromValue(value));
+				*out += DisplayName(FormFromValue(value));
 				p++;
 				break;
 
