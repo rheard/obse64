@@ -999,9 +999,21 @@ typedef bool (* _QueueUIMessageWithIcon)(void * message, float duration, const c
 static RelocAddr <_QueueUIMessageWithIcon> QueueUIMessageWithIcon(0x0656C3E0);
 static RelocAddr <uintptr_t> kAddItem_MessageCall(0x067DD888);
 
+// EquipItem and UnequipItem tell the player what was equipped with the game's plain message, a
+// notification (classic's QueueUIMessage, 0x0656C6B0), called from 0x06A09E6D and 0x06A20D6F,
+// which EquipItemNS and UnequipItemNS skip the same way.
+struct UIMessage;	// a message for Unreal to show, with MessageEX below
+
+typedef bool (* _QueueUIMessage)(UIMessage * message, void * unk, u32 notification, float duration);
+static RelocAddr <_QueueUIMessage> QueueUIMessage(0x0656C6B0);
+static RelocAddr <uintptr_t> kEquipItem_MessageCall(0x06A09E6D);
+static RelocAddr <uintptr_t> kUnequipItem_MessageCall(0x06A20D6F);
+
 enum
 {
-	kOpcode_AddItem = 0x1002,
+	kOpcode_AddItem =		0x1002,
+	kOpcode_EquipItem =		0x10EE,
+	kOpcode_UnequipItem =	0x10EF,
 };
 
 static u32 s_itemMessagesOff = 0;
@@ -1013,27 +1025,55 @@ static bool AddItem_Message_Hook(void * message, float duration, const char * ic
 	return QueueUIMessageWithIcon(message, duration, icon, sound, unk);
 }
 
+static bool EquipItem_Message_Hook(UIMessage * message, void * unk, u32 notification, float duration)
+{
+	if(s_itemMessagesOff) return false;
+
+	return QueueUIMessage(message, unk, notification, duration);
+}
+
 static void InstallItemMessageHook()
 {
-	if(!IsCallTo(kAddItem_MessageCall.getUIntPtr(), QueueUIMessageWithIcon.getUIntPtr()))
-	{
+	if(IsCallTo(kAddItem_MessageCall.getUIntPtr(), QueueUIMessageWithIcon.getUIntPtr()))
+		g_branchTrampoline.write5Call(kAddItem_MessageCall.getUIntPtr(), uintptr_t(AddItem_Message_Hook));
+	else
 		_ERROR("AddItem's message call isn't where expected; AddItemNS will show the message");
-		return;
-	}
 
-	g_branchTrampoline.write5Call(kAddItem_MessageCall.getUIntPtr(), uintptr_t(AddItem_Message_Hook));
+	for(uintptr_t call : { kEquipItem_MessageCall.getUIntPtr(), kUnequipItem_MessageCall.getUIntPtr() })
+	{
+		if(IsCallTo(call, QueueUIMessage.getUIntPtr()))
+			g_branchTrampoline.write5Call(call, uintptr_t(EquipItem_Message_Hook));
+		else
+			_ERROR("an equip message call isn't where expected; EquipItemNS and UnequipItemNS will show it");
+	}
+}
+
+// runs the game's command with its item messages skipped
+static bool RunWithoutItemMessages(u32 opcode, COMMAND_ARGS)
+{
+	CommandInfo * cmd = GetCommandInfo(opcode);
+	if(!cmd || !cmd->execute) return false;
+
+	s_itemMessagesOff++;
+	bool ok = cmd->execute(cmd->params, scriptData, thisObj, containingObj, script, locals, result, opcodeOffsetPtr);
+	s_itemMessagesOff--;
+
+	return ok;
 }
 
 static bool Cmd_AddItemNS_Execute(COMMAND_ARGS)
 {
-	CommandInfo * addItem = GetCommandInfo(kOpcode_AddItem);
-	if(!addItem || !addItem->execute) return false;
+	return RunWithoutItemMessages(kOpcode_AddItem, PASS_COMMAND_ARGS);
+}
 
-	s_itemMessagesOff++;
-	bool ok = addItem->execute(addItem->params, scriptData, thisObj, containingObj, script, locals, result, opcodeOffsetPtr);
-	s_itemMessagesOff--;
+static bool Cmd_EquipItemNS_Execute(COMMAND_ARGS)
+{
+	return RunWithoutItemMessages(kOpcode_EquipItem, PASS_COMMAND_ARGS);
+}
 
-	return ok;
+static bool Cmd_UnequipItemNS_Execute(COMMAND_ARGS)
+{
+	return RunWithoutItemMessages(kOpcode_UnequipItem, PASS_COMMAND_ARGS);
 }
 
 static ParamInfo kParams_AddItem[2] =
@@ -1050,6 +1090,32 @@ static CommandInfo kCommandInfo_AddItemNS =
 	1,
 	2, kParams_AddItem,
 	Cmd_AddItemNS_Execute
+};
+
+static ParamInfo kParams_EquipItem[2] =
+{
+	{	"item", kParamType_InventoryObject, 0 },
+	{	"lockEquip", kParamType_Integer, 1 },
+};
+
+static CommandInfo kCommandInfo_EquipItemNS =
+{
+	"EquipItemNS", "",
+	0,
+	"version of EquipItem which doesn't generate UI messages",
+	1,
+	2, kParams_EquipItem,
+	Cmd_EquipItemNS_Execute
+};
+
+static CommandInfo kCommandInfo_UnequipItemNS =
+{
+	"UnequipItemNS", "",
+	0,
+	"version of UnequipItem which doesn't generate UI messages",
+	1,
+	2, kParams_EquipItem,
+	Cmd_UnequipItemNS_Execute
 };
 
 // GetFirstRef and GetNextRef walk the references in the player's cell, and in an exterior the
@@ -1761,9 +1827,6 @@ static RelocAddr <_UIMessage_AddPart> UIMessage_AddPart(0x0655A5A0);
 typedef void (* _UIMessage_DestroyParts)(void ** parts);
 static RelocAddr <_UIMessage_DestroyParts> UIMessage_DestroyParts(0x04722180);
 
-typedef bool (* _QueueUIMessage)(UIMessage * message, void * unk, u32 notification, float duration);
-static RelocAddr <_QueueUIMessage> QueueUIMessage(0x0656C6B0);
-
 // the message, the callback that records the button pressed, flags, a button of its own (none
 // here), then the buttons, up to an empty one
 typedef bool (* _ShowMessageBox)(UIMessage * message, uintptr_t callback, u32 flags, const char * ownButton, ...);
@@ -2471,6 +2534,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetRider,		kRetnType_Form },
 	{ &kCommandInfo_GetGameRestarted,	kRetnType_Default },
 	{ &kCommandInfo_FileExists,		kRetnType_Default },
+	{ &kCommandInfo_EquipItemNS,	kRetnType_Default },
+	{ &kCommandInfo_UnequipItemNS,	kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
