@@ -698,6 +698,38 @@ static CommandInfo kCommandInfo_IsCreature =
 	Cmd_IsCreature_Execute
 };
 
+// An actor keeps the horse it rides, and a horse its rider, at +0x288 (classic's horseOrRider):
+// Character's virtual function 0xF0 and Creature's 0xF2 return it, and IsRidingHorse asks them.
+enum
+{
+	kActorOffset_HorseOrRider =	0x288,
+};
+
+static bool Cmd_GetRider_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u8 * horse = thisObj ? (u8 *)Runtime_DynamicCast(thisObj, RTTI_TESObjectREFR, RTTI_Creature) : nullptr;
+	auto * rider = horse ? *(TESObjectREFR **)(horse + kActorOffset_HorseOrRider) : nullptr;
+	if(rider)
+		SetFormResult(result, rider->refID);
+
+	if(IsConsoleMode())
+		Console_Print("GetRider >> %08X", rider ? rider->refID : 0);
+
+	return true;
+}
+
+static CommandInfo kCommandInfo_GetRider =
+{
+	"GetRider", "",
+	0,
+	"returns a reference to the actor currently riding the calling horse",
+	1,
+	0, nullptr,
+	Cmd_GetRider_Execute
+};
+
 enum
 {
 	kMenuType_Magic =	1022,
@@ -2365,6 +2397,7 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_sv_Set,			kRetnType_Default },
 	{ &kCommandInfo_sv_Length,		kRetnType_Default },
 	{ &kCommandInfo_sv_SubString,	kRetnType_String },
+	{ &kCommandInfo_GetRider,		kRetnType_Form },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
