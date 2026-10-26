@@ -1635,11 +1635,27 @@ static std::string DisplayName(TESForm * form)
 	return shown.empty() ? name : shown;
 }
 
+// A key's name for %k, from its classic keycode: a DirectInput scan code (0x80 set for the keys
+// with an E0 prefix), or from 256 a mouse button. Classic had DirectInput's names; this asks
+// Windows for the key's name on the keyboard in use.
+static std::string KeyName(u32 keycode)
+{
+	static const char * kMouseButtons[] = { "Left Mouse Button", "Right Mouse Button", "Middle Mouse Button", "Mouse Button 4", "Mouse Button 5" };
+	if(keycode >= 0x100)
+		return (keycode - 0x100 < 5) ? kMouseButtons[keycode - 0x100] : "?";
+
+	char name[64];
+	LONG lParam = LONG((keycode & 0x7F) << 16) | ((keycode & 0x80) ? (1 << 24) : 0);
+	if(!GetKeyNameTextA(lParam, name, sizeof(name))) return "?";
+
+	return name;
+}
+
 // Expands a classic OBSE format string. OBSE's own specifiers are replaced in place, and any
 // other % takes the next argument as a number, as classic OBSE left those to sprintf. %n and %i
-// take a form, which a variable holds as its form ID's number, and %z a string variable. The ones
-// that need a name table (%c %p %k %v) still use up their arguments, so later numbers line up, but
-// print "?" for now. False if there are too few arguments; numUsed receives how many it took.
+// take a form, which a variable holds as its form ID's number, %z a string variable, and %k a key.
+// The ones that need a name table (%c %p %v) still use up their arguments, so later numbers line
+// up, but print "?" for now. False if there are too few arguments; numUsed receives how many it took.
 static bool FormatClassicString(const char * fmt, const double * args, u32 numArgs, std::string * out, u32 * numUsed)
 {
 	u32 argIdx = 0;
@@ -1715,6 +1731,11 @@ static bool FormatClassicString(const char * fmt, const double * args, u32 numAr
 				break;
 
 			case 'k': case 'K':
+				if(!nextArg(&value)) return false;
+				*out += KeyName(u32(value));
+				p++;
+				break;
+
 			case 'v': case 'V':
 				if(!nextArg(&value)) return false;
 				*out += '?';
