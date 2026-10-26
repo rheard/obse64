@@ -836,6 +836,52 @@ static CommandInfo kCommandInfo_GetRider =
 	Cmd_GetRider_Execute
 };
 
+// The game's IsRunning reads an actor's movement flags. Classic set the player's running flag
+// whenever Always Run was on (or Run held), moving or not, and mods ask IsRunning whether the
+// player runs: No Backwards Running does, to know whether to switch to walking as the player backs
+// up. The Remastered's flags for the player come from Unreal, and say running only while moving at
+// a run. So for the player on foot, IsRunning in scripts answers as classic did, from Unreal's walk
+// toggle and sprinting (PlayerControls.cpp); other actors, the player on a horse, and the game's
+// conditions get the game's answer.
+enum
+{
+	kOpcode_IsRunning =	0x111F,
+};
+
+static ExecuteFunction s_isRunning = nullptr;
+
+static bool Cmd_IsRunning_Execute(COMMAND_ARGS)
+{
+	auto * player = reinterpret_cast <TESObjectREFR *>(PlayerCharacter::Get());
+	bool running = false;
+
+	if(thisObj && thisObj == player && !*(TESObjectREFR **)((u8 *)player + kActorOffset_HorseOrRider) &&
+		PlayerControls_GetRunning(&running))
+	{
+		*result = running ? 1 : 0;
+
+		if(IsConsoleMode())
+			Console_Print(running ? "%s is running" : "%s is not running", GetFullName(player));
+
+		return true;
+	}
+
+	return s_isRunning(PASS_COMMAND_ARGS);
+}
+
+static void InstallIsRunning()
+{
+	CommandInfo * info = GetCommandInfo(kOpcode_IsRunning);
+	if(!info || !info->execute)
+	{
+		_ERROR("IsRunning isn't where expected; it keeps the game's answer for the player");
+		return;
+	}
+
+	s_isRunning = info->execute;
+	info->execute = Cmd_IsRunning_Execute;
+}
+
 enum
 {
 	kMenuType_Magic =	1022,
@@ -2767,4 +2813,5 @@ void AddClassicCommands()
 	InstallStringVarHooks();
 	InstallUserFunctionBlock();
 	PlayerControls_Install();
+	InstallIsRunning();
 }

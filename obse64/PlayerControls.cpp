@@ -24,9 +24,15 @@ enum
 	kControl_AlwaysRun =	11,
 
 	// the player controller: how far the player is moving forward, back, left and right (in
-	// classic's order), and whether the sprint toggle is on (the walk toggle is the byte after it)
+	// classic's order), and whether the sprint and walk toggles are on
 	kControllerOffset_Movement =	0xD4C,
 	kControllerOffset_Sprinting =	0xA58,
+	kControllerOffset_Walking =		0xA59,
+
+	// what s_running holds
+	kRunning_Unknown =	0,
+	kRunning_No,
+	kRunning_Yes,
 
 	// how GetPlayerController (0x031ABE90) gets there: the world's game instance, its local players,
 	// and the first one's controller
@@ -71,6 +77,7 @@ static RelocAddr <uintptr_t> kToggleWalk_Call(0x04641B18);
 static std::atomic <u32>	s_down = 0;		// controls down, as bits, for the Oblivion thread
 static std::atomic <u32>	s_disabled = 0;	// controls disabled, as bits
 static std::atomic <u32>	s_walkTaps = 0;	// Always Run taps asked for
+static std::atomic <u32>	s_running = kRunning_Unknown;	// whether the player is set to run
 
 static uintptr_t Address(uintptr_t rva)
 {
@@ -153,6 +160,16 @@ bool PlayerControls_SetDisabled(u32 control, bool disabled)
 	return true;
 }
 
+bool PlayerControls_GetRunning(bool * running)
+{
+	u32 state = s_running;
+	if(state == kRunning_Unknown) return false;
+
+	*running = state == kRunning_Yes;
+
+	return true;
+}
+
 bool PlayerControls_Tap(u32 control)
 {
 	if(control != kControl_AlwaysRun) return false;
@@ -169,6 +186,7 @@ void PlayerControls_Update()
 	{
 		s_down = 0;
 		s_walkTaps = 0;
+		s_running = kRunning_Unknown;
 		return;
 	}
 
@@ -191,6 +209,7 @@ void PlayerControls_Update()
 		down |= 1 << kControl_Run;
 
 	s_down = down;
+	s_running = (!controller[kControllerOffset_Walking] || controller[kControllerOffset_Sprinting]) ? kRunning_Yes : kRunning_No;
 
 	// an input action's value, a vector, as a key press gives it
 	static const double kPressed[3] = { 1, 0, 0 };

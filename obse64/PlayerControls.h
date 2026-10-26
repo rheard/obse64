@@ -16,6 +16,10 @@ bool PlayerControls_SetDisabled(u32 control, bool disabled);
 // presses a control for a moment, as the player would; false if that isn't possible for it
 bool PlayerControls_Tap(u32 control);
 
+// whether the player is set to run on foot: the walk toggle off, or sprinting, which is what
+// classic's running flag said; false if the player controller isn't known
+bool PlayerControls_GetRunning(bool * running);
+
 // does what was asked of Unreal, once each Unreal frame, on its game thread
 void PlayerControls_Update();
 
