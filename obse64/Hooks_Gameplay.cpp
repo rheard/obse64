@@ -17,6 +17,7 @@ void OblivionThreadHook(const char * dbgStr)
 void UnrealGameThreadHook()
 {
 	PlayerControls_Update();
+	UpdateKeyInput();
 }
 
 void Hooks_Gameplay_Apply()

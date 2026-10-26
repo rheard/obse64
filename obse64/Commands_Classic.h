@@ -32,6 +32,10 @@ bool IsKeycodeDown(u32 keycode);
 // sends the frame's key and control events to their handlers (Commands_Events.cpp)
 void ProcessInputEvents();
 
+// does the key presses scripts asked for, once each Unreal frame, on its game thread
+// (Commands_Input.cpp)
+void UpdateKeyInput();
+
 // a call at src to the function at dst, as the game was built
 inline bool IsCallTo(uintptr_t src, uintptr_t dst)
 {

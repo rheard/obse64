@@ -562,6 +562,10 @@ extern CommandInfo kCommandInfo_sv_SubString;
 extern CommandInfo kCommandInfo_SetEventHandler;
 extern CommandInfo kCommandInfo_RemoveEventHandler;
 
+// in Commands_Input.cpp, with OBSE64's own key commands
+extern CommandInfo kCommandInfo_GetNumKeysPressed;
+extern CommandInfo kCommandInfo_GetKeyPress;
+
 static CommandInfo kCommandInfo_IsOffLimits =
 {
 	"IsOffLimits", "",
@@ -2636,6 +2640,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_DisableControl,	kRetnType_Default },
 	{ &kCommandInfo_EnableControl,	kRetnType_Default },
 	{ &kCommandInfo_TapControl,		kRetnType_Default },
+	{ &kCommandInfo_GetNumKeysPressed,	kRetnType_Default },
+	{ &kCommandInfo_GetKeyPress,	kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
