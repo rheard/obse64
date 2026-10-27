@@ -527,6 +527,45 @@ static bool Cmd_SetRefEssential_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// An actor's spells, the player's included, are its base's TESSpellList (+0x98 in NPCs and
+// creatures), which AddSpell (0x0659F1D0) and RemoveSpell (0x065C5350) change: a list of
+// { form, next } nodes from +0x08, and the game's own check for one spell walks it (0x068869A0).
+// As classic, the leveled spell lists the base also has don't count.
+typedef bool (* _TESSpellList_HasSpell)(void * spellList, TESForm * spell);
+static RelocAddr <_TESSpellList_HasSpell> TESSpellList_HasSpell(0x068869A0);
+
+static bool Cmd_HasSpell_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESForm * spell = nullptr;
+	if(!ExtractArgs(EXTRACT_ARGS, &spell)) return true;
+
+	if(spell && thisObj && thisObj->baseForm)
+	{
+		if(void * spellList = Runtime_DynamicCast(thisObj->baseForm, RTTI_TESForm, RTTI_TESSpellList))
+		{
+			if(TESSpellList_HasSpell(spellList, spell))
+				*result = 1;
+		}
+	}
+
+	if(IsConsoleMode())
+		Console_Print("HasSpell >> %d", (int)*result);
+
+	return true;
+}
+
+static CommandInfo kCommandInfo_HasSpell =
+{
+	"HasSpell", "hspl",
+	0,
+	"returns 1 if the actor has the spell",
+	1,
+	1, kParams_OneSpellItem,
+	Cmd_HasSpell_Execute
+};
+
 static CommandInfo kCommandInfo_IsRefEssential =
 {
 	"IsRefEssential", "",
@@ -1156,11 +1195,13 @@ static bool Cmd_GetGameRestarted_Execute(COMMAND_ARGS)
 }
 
 // AddItem tells the player what was added with the game's message that has an icon (classic's
-// QueueUIMessage_2, 0x0656C3E0), called from 0x067DD888. AddItemNS runs the game's AddItem with
+// QueueUIMessage_2, 0x0656C3E0), called from 0x067DD888, and RemoveItem what was removed with the
+// same, from its own handler at 0x06A15F8B. AddItemNS and RemoveItemNS run the game's command with
 // that message skipped, as classic did by making the message functions return at once.
 typedef bool (* _QueueUIMessageWithIcon)(void * message, float duration, const char * icon, void * sound, u8 unk);
 static RelocAddr <_QueueUIMessageWithIcon> QueueUIMessageWithIcon(0x0656C3E0);
 static RelocAddr <uintptr_t> kAddItem_MessageCall(0x067DD888);
+static RelocAddr <uintptr_t> kRemoveItem_MessageCall(0x06A15F8B);
 
 // EquipItem and UnequipItem tell the player what was equipped with the game's plain message, a
 // notification (classic's QueueUIMessage, 0x0656C6B0), called from 0x06A09E6D and 0x06A20D6F,
@@ -1175,13 +1216,14 @@ static RelocAddr <uintptr_t> kUnequipItem_MessageCall(0x06A20D6F);
 enum
 {
 	kOpcode_AddItem =		0x1002,
+	kOpcode_RemoveItem =	0x1052,
 	kOpcode_EquipItem =		0x10EE,
 	kOpcode_UnequipItem =	0x10EF,
 };
 
 static u32 s_itemMessagesOff = 0;
 
-static bool AddItem_Message_Hook(void * message, float duration, const char * icon, void * sound, u8 unk)
+static bool IconMessage_Hook(void * message, float duration, const char * icon, void * sound, u8 unk)
 {
 	if(s_itemMessagesOff) return false;
 
@@ -1198,9 +1240,14 @@ static bool EquipItem_Message_Hook(UIMessage * message, void * unk, u32 notifica
 static void InstallItemMessageHook()
 {
 	if(IsCallTo(kAddItem_MessageCall.getUIntPtr(), QueueUIMessageWithIcon.getUIntPtr()))
-		g_branchTrampoline.write5Call(kAddItem_MessageCall.getUIntPtr(), uintptr_t(AddItem_Message_Hook));
+		g_branchTrampoline.write5Call(kAddItem_MessageCall.getUIntPtr(), uintptr_t(IconMessage_Hook));
 	else
 		_ERROR("AddItem's message call isn't where expected; AddItemNS will show the message");
+
+	if(IsCallTo(kRemoveItem_MessageCall.getUIntPtr(), QueueUIMessageWithIcon.getUIntPtr()))
+		g_branchTrampoline.write5Call(kRemoveItem_MessageCall.getUIntPtr(), uintptr_t(IconMessage_Hook));
+	else
+		_ERROR("RemoveItem's message call isn't where expected; RemoveItemNS will show the message");
 
 	for(uintptr_t call : { kEquipItem_MessageCall.getUIntPtr(), kUnequipItem_MessageCall.getUIntPtr() })
 	{
@@ -1229,6 +1276,11 @@ static bool Cmd_AddItemNS_Execute(COMMAND_ARGS)
 	return RunWithoutItemMessages(kOpcode_AddItem, PASS_COMMAND_ARGS);
 }
 
+static bool Cmd_RemoveItemNS_Execute(COMMAND_ARGS)
+{
+	return RunWithoutItemMessages(kOpcode_RemoveItem, PASS_COMMAND_ARGS);
+}
+
 static bool Cmd_EquipItemNS_Execute(COMMAND_ARGS)
 {
 	return RunWithoutItemMessages(kOpcode_EquipItem, PASS_COMMAND_ARGS);
@@ -1253,6 +1305,16 @@ static CommandInfo kCommandInfo_AddItemNS =
 	1,
 	2, kParams_AddItem,
 	Cmd_AddItemNS_Execute
+};
+
+static CommandInfo kCommandInfo_RemoveItemNS =
+{
+	"RemoveItemNS", "",
+	0,
+	"version of RemoveItem which doesn't generate UI messages",
+	1,
+	2, kParams_AddItem,
+	Cmd_RemoveItemNS_Execute
 };
 
 static ParamInfo kParams_EquipItem[2] =
@@ -2714,6 +2776,8 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetCurrentCharge,	kRetnType_Default },
 	{ &kCommandInfo_SetCurrentCharge,	kRetnType_Default },
 	{ &kCommandInfo_ModCurrentCharge,	kRetnType_Default },
+	{ &kCommandInfo_RemoveItemNS,	kRetnType_Default },
+	{ &kCommandInfo_HasSpell,		kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
