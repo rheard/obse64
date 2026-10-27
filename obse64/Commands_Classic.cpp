@@ -551,6 +551,9 @@ static CommandInfo kCommandInfo_SetRefEssential =
 extern CommandInfo kCommandInfo_GetObjectCharge;
 extern CommandInfo kCommandInfo_GetEquippedCurrentCharge;
 extern CommandInfo kCommandInfo_ModEquippedCurrentCharge;
+extern CommandInfo kCommandInfo_GetCurrentCharge;
+extern CommandInfo kCommandInfo_SetCurrentCharge;
+extern CommandInfo kCommandInfo_ModCurrentCharge;
 
 // in Commands_Loops.cpp, with the loops they keep
 extern CommandInfo kCommandInfo_ForEach;
@@ -2708,6 +2711,9 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_Loop,			kRetnType_Default },
 	{ &kCommandInfo_Break,			kRetnType_Default },
 	{ &kCommandInfo_Continue,		kRetnType_Default },
+	{ &kCommandInfo_GetCurrentCharge,	kRetnType_Default },
+	{ &kCommandInfo_SetCurrentCharge,	kRetnType_Default },
+	{ &kCommandInfo_ModCurrentCharge,	kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)

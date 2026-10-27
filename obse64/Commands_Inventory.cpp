@@ -4,6 +4,7 @@
 #include "GameObjects.h"
 #include "GameRTTI.h"
 #include "GameConsole.h"
+#include "InventoryReference.h"
 #include "ParamInfos.h"
 #include <vector>
 #include <map>
@@ -560,6 +561,96 @@ static bool Cmd_ModEquippedCurrentCharge_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// GetCurrentCharge, SetCurrentCharge and ModCurrentCharge, on an item in the world or one in an
+// inventory, through an inventory reference (ForEach's), whose stack's own extra data they read and
+// change. An inventory reference's own copy is read only once its stack is gone.
+static bool Cmd_GetCurrentCharge_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	BaseExtraList::Locker lock;
+
+	BaseExtraList * list = IsInventoryRef(thisObj) ? GetInventoryRefList(thisObj, false) : nullptr;
+	if(!list)
+		list = &thisObj->extraList;
+
+	auto * xCharge = list->Get<ExtraCharge>();
+	*result = xCharge ? xCharge->charge : GetFullCharge(thisObj->baseForm);
+
+	if(IsConsoleMode())
+		Console_Print("GetCurrentCharge >> %.2f", *result);
+
+	return true;
+}
+
+// As classic: back at full, the item loses its ExtraCharge; a charge below 0 or above full changes
+// nothing. A stack of items without extra data of their own is given a list for its new charge.
+static bool ChangeCurrentCharge(COMMAND_ARGS, bool mod)
+{
+	*result = 0;
+
+	float value = 0;
+	if(!thisObj || !ExtractArgs(EXTRACT_ARGS, &value)) return true;
+
+	TESForm * item = thisObj->baseForm;
+	if(!item || !DYNAMIC_CAST(item, TESForm, TESEnchantableForm)) return true;
+
+	BaseExtraList::Locker lock;
+
+	bool isInventoryRef = IsInventoryRef(thisObj);
+	BaseExtraList * list = isInventoryRef ? GetInventoryRefList(thisObj, false) : &thisObj->extraList;
+	auto * xCharge = list ? list->Get<ExtraCharge>() : nullptr;
+
+	float fullCharge = float(GetFullCharge(item));
+	float charge = (mod ? (xCharge ? xCharge->charge : fullCharge) : 0) + value;
+
+	if(charge == fullCharge)
+	{
+		if(xCharge)
+		{
+			BaseExtraList_Remove(list, xCharge, true);
+			*result = 1;
+		}
+	}
+	else if(charge >= 0 && charge <= fullCharge)
+	{
+		if(xCharge)
+		{
+			xCharge->charge = charge;
+			*result = 1;
+		}
+		else
+		{
+			if(!list)
+				list = GetInventoryRefList(thisObj, true);
+
+			void * mem = list ? GameHeap_Allocate(sizeof(ExtraCharge)) : nullptr;
+			if(mem)
+			{
+				BaseExtraList_Add(list, ExtraCharge_Construct(mem, charge));
+				*result = 1;
+			}
+		}
+	}
+
+	if(*result && isInventoryRef)
+		RefreshInventoryRef(thisObj);
+
+	return true;
+}
+
+static bool Cmd_SetCurrentCharge_Execute(COMMAND_ARGS)
+{
+	return ChangeCurrentCharge(PASS_COMMAND_ARGS, false);
+}
+
+static bool Cmd_ModCurrentCharge_Execute(COMMAND_ARGS)
+{
+	return ChangeCurrentCharge(PASS_COMMAND_ARGS, true);
+}
+
 static ParamInfo kParams_ModEquippedFloat[2] =
 {
 	{ "value", kParamType_Float, 0 },
@@ -594,6 +685,36 @@ CommandInfo kCommandInfo_ModEquippedCurrentCharge =
 	1,
 	2, kParams_ModEquippedFloat,
 	Cmd_ModEquippedCurrentCharge_Execute
+};
+
+CommandInfo kCommandInfo_GetCurrentCharge =
+{
+	"GetCurrentCharge", "",
+	0,
+	"returns the current charge of the calling reference",
+	1,
+	0, nullptr,
+	Cmd_GetCurrentCharge_Execute
+};
+
+CommandInfo kCommandInfo_SetCurrentCharge =
+{
+	"SetCurrentCharge", "",
+	0,
+	"sets the current charge of the calling reference",
+	1,
+	1, kParams_OneFloat,
+	Cmd_SetCurrentCharge_Execute
+};
+
+CommandInfo kCommandInfo_ModCurrentCharge =
+{
+	"ModCurrentCharge", "",
+	0,
+	"modifies the current charge of the calling reference",
+	1,
+	1, kParams_OneFloat,
+	Cmd_ModCurrentCharge_Execute
 };
 
 CommandInfo kCommandInfo_GetEquipmentSlotType =
