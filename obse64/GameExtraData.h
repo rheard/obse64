@@ -100,3 +100,19 @@ public:
 };
 
 static_assert(sizeof(ExtraCharge) == 0x20);
+
+// 20
+// how many items in an inventory share an extra data list, only present when it's more than one
+class ExtraCount : public BSExtraData
+{
+public:
+	enum { kID = kExtraData_Count };
+
+	s16	count;		// 18
+	u8	pad1A[6];	// 1A
+};
+
+static_assert(sizeof(ExtraCount) == 0x20);
+
+typedef ExtraCount * (* _ExtraCount_Construct)(void * mem, s16 count);
+extern RelocAddr <_ExtraCount_Construct> ExtraCount_Construct;

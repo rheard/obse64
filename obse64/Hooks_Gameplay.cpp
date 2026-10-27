@@ -10,6 +10,9 @@ RelocAddr <uintptr_t> UnrealGameThread_Target(0x03907660 + 0x53);
 // once each pass of the Oblivion thread's main loop, before the frame is run
 void OblivionThreadHook(const char * dbgStr)
 {
+	// a loop runs within one script's run, so any still going was left by a script returning in it
+	ResetLoops();
+
 	ProcessInputEvents();
 }
 

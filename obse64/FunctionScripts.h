@@ -15,3 +15,6 @@ bool CallUserFunction(Script * script, TESObjectREFR * thisObj, TESObjectREFR * 
 
 // makes the game run a Function block when, and only when, its script is called as a function
 void InstallUserFunctionBlock();
+
+// sets one of a script's local variables; a form is kept as its form ID
+void SetScriptVariable(ScriptLocals * locals, u32 varIdx, double value);

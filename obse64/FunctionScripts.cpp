@@ -166,9 +166,16 @@ static void SetVariable(ScriptLocals * locals, const FunctionParam & param, cons
 		return;
 	}
 
+	SetScriptVariable(locals, param.varIdx, value);
+}
+
+void SetScriptVariable(ScriptLocals * locals, u32 varIdx, double value)
+{
+	if(!locals) return;
+
 	for(auto * node = reinterpret_cast <ScriptLocalsLayout *>(locals)->vars; node; node = node->next)
 	{
-		if(node->var && node->var->idx == param.varIdx)
+		if(node->var && node->var->idx == varIdx)
 		{
 			node->var->value = value;
 			return;

@@ -24,6 +24,7 @@ enum
 // classic OBSE's operators, compiled as their number in its OperatorType
 enum
 {
+	kOpType_In =		26,	// iterator <- source, ForEach's
 	kOpType_MakePair =	36,	// key::value
 };
 
@@ -74,6 +75,19 @@ void ObseExpression::Fail(const char * fmt, ...)
 	std::string key = std::to_string(scriptID) + buf;
 	if(s_reported.insert(key).second)
 		_MESSAGE("OBSE expression in script %08X: %s", scriptID, buf);
+}
+
+bool ObseExpression::Skip(u32 length)
+{
+	if(m_data + length > m_end)
+	{
+		Fail("expression runs past the end of the command");
+		return false;
+	}
+
+	m_data += length;
+
+	return true;
 }
 
 bool ObseExpression::ExtractArgs()
@@ -274,6 +288,10 @@ bool ObseExpression::ReadToken(const u8 * end, std::vector <Value> * stack)
 				value.type = Value::kType_Number;
 				value.number = number;
 			}
+
+			value.isLocalVar = !refIdx;
+			value.varType = varType;
+			value.varIdx = varIdx;
 		}
 		break;
 
@@ -431,6 +449,40 @@ bool ObseExpression::ApplyOperator(u8 op, std::vector <Value> * stack)
 
 			stack->resize(stack->size() - 2);
 			stack->push_back(pair);
+		}
+		return true;
+
+		case kOpType_In:
+		{
+			if(stack->size() < 2)
+			{
+				Fail("'<-' without an iterator and a source");
+				return false;
+			}
+
+			const Value & iterator = (*stack)[stack->size() - 2];
+			const Value & source = stack->back();
+
+			// classic also loops over arrays and strings, with variables of those types
+			if(!iterator.isLocalVar || iterator.varType != kVarType_Ref)
+			{
+				Fail("ForEach over an array or a string is not supported yet");
+				return false;
+			}
+
+			if(source.type != Value::kType_Form)
+			{
+				Fail("ForEach over something other than a container");
+				return false;
+			}
+
+			Value context;
+			context.type = Value::kType_ForEach;
+			context.formID = source.formID;
+			context.varIdx = iterator.varIdx;
+
+			stack->resize(stack->size() - 2);
+			stack->push_back(context);
 		}
 		return true;
 	}

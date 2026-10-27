@@ -445,17 +445,10 @@ CommandInfo kCommandInfo_GetInventoryItemType =
 
 // classic OBSE's enchantment charge commands (Commands_Classic.cpp registers them)
 
-// what vanilla SetOwnership uses to give a list new extra data (0x06621210), and to drop it:
-// the game's allocator (Unreal's FMemory, 16-byte aligned), a constructor, and the list's own
-// add and remove
-typedef void * (* _GameHeap_Allocate)(size_t size);
-static RelocAddr <_GameHeap_Allocate> GameHeap_Allocate(0x04702CB0);
+// new extra data is made with the game's allocator and a constructor, as vanilla SetOwnership makes
+// its own (0x06621210), and given to a list with the list's own add
 typedef ExtraCharge * (* _ExtraCharge_Construct)(void * mem, float charge);
 static RelocAddr <_ExtraCharge_Construct> ExtraCharge_Construct(0x067FCD20);
-typedef void (* _BaseExtraList_Add)(BaseExtraList * list, BSExtraData * data);
-static RelocAddr <_BaseExtraList_Add> BaseExtraList_Add(0x06615310);
-typedef void (* _BaseExtraList_Remove)(BaseExtraList * list, BSExtraData * data, bool free);
-static RelocAddr <_BaseExtraList_Remove> BaseExtraList_Remove(0x0661D210);
 
 // an object's full charge, from its enchantable component; valid for weapons
 static u32 GetFullCharge(TESForm * form)

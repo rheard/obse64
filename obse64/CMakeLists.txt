@@ -125,6 +125,8 @@ source_group(
 		ObseExpression.h
 		FunctionScripts.cpp
 		FunctionScripts.h
+		InventoryReference.cpp
+		InventoryReference.h
 		PlayerControls.cpp
 		PlayerControls.h
 		ParamInfos.cpp
@@ -146,6 +148,7 @@ source_group(
 		Commands_Classic.h
 		Commands_String.cpp
 		Commands_Events.cpp
+		Commands_Loops.cpp
 		ClassicCommandTable.inl
 )
 

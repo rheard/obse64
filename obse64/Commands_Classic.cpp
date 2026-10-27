@@ -552,6 +552,12 @@ extern CommandInfo kCommandInfo_GetObjectCharge;
 extern CommandInfo kCommandInfo_GetEquippedCurrentCharge;
 extern CommandInfo kCommandInfo_ModEquippedCurrentCharge;
 
+// in Commands_Loops.cpp, with the loops they keep
+extern CommandInfo kCommandInfo_ForEach;
+extern CommandInfo kCommandInfo_Loop;
+extern CommandInfo kCommandInfo_Break;
+extern CommandInfo kCommandInfo_Continue;
+
 // in Commands_String.cpp, with the strings they keep
 extern CommandInfo kCommandInfo_sv_Construct;
 extern CommandInfo kCommandInfo_sv_Set;
@@ -1068,6 +1074,9 @@ static void OnGameLoaded()
 {
 	s_gameLoaded = true;
 	s_gameLoadCount++;
+
+	// before the save's forms come in, as an unfinished loop's inventory reference has a form ID
+	ResetLoops();
 }
 
 static void * SaveLoad_OpenSave_Hook(void * saveLoad, void * unk, const char * name, s32 unk2)
@@ -2281,23 +2290,6 @@ static bool Cmd_FileExists_Execute(COMMAND_ARGS)
 	return true;
 }
 
-// The game's script runner (0xC0 bytes, built by 0x0694C7C0). ScriptRunner::Run (0x0694D6D0) steps
-// through a script's statements and has 0x0694C810 run each one. The runner keeps the if/else
-// nesting: a depth, and for each level 1 while inside an if and 2 once one of its branches ran.
-struct ScriptRunner
-{
-	u8		unk00[0x28];	// 00
-	Script	* script;		// 28 the script running, 0 when idle
-	u32		unk30;			// 30
-	u32		unk34;			// 34
-	s32		ifDepth;		// 38
-	u32		ifStack[10];	// 3C
-};
-
-static_assert(offsetof(ScriptRunner, script) == 0x28);
-static_assert(offsetof(ScriptRunner, ifDepth) == 0x38);
-static_assert(offsetof(ScriptRunner, ifStack) == 0x3C);
-
 // the runner Run's callers use, unless it's busy with another script (0x0694D580)
 static RelocPtr <ScriptRunner *> g_scriptRunner(0x094904E8);
 
@@ -2319,10 +2311,7 @@ struct SavedIP
 
 static std::map <std::pair <Script *, u32>, SavedIP> s_savedIPs;
 
-// The runner running this statement, and Run's length for it. False unless the command is a
-// statement of its own run by the main runner: not part of an expression, nor in a script that
-// another one started.
-static bool GetStatementState(void * returnAddress, Script * script, const char * scriptData, u32 argsOffset,
+bool GetStatementState(void * returnAddress, Script * script, const char * scriptData, u32 argsOffset,
 	u32 * opcodeOffsetPtr, ScriptRunner ** runner, s32 ** length)
 {
 	if(uintptr_t(returnAddress) != kStatementCommandReturn.getUIntPtr()) return false;
@@ -2715,6 +2704,10 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetKeyPress,	kRetnType_Default },
 	{ &kCommandInfo_Call,			kRetnType_Ambiguous },
 	{ &kCommandInfo_SetFunctionValue,	kRetnType_Default },
+	{ &kCommandInfo_ForEach,		kRetnType_Default },
+	{ &kCommandInfo_Loop,			kRetnType_Default },
+	{ &kCommandInfo_Break,			kRetnType_Default },
+	{ &kCommandInfo_Continue,		kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
