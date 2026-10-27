@@ -651,10 +651,461 @@ static bool Cmd_ModCurrentCharge_Execute(COMMAND_ARGS)
 	return ChangeCurrentCharge(PASS_COMMAND_ARGS, true);
 }
 
+// classic OBSE's item health and weapon poison commands, and SetEquippedCurrentCharge (Commands_Classic.cpp
+// registers them)
+
+// an item's health is its ExtraHealth's while it has one (0x067FD010 makes one), else its base's
+typedef ExtraHealth * (* _ExtraHealth_Construct)(void * mem, float health);
+static RelocAddr <_ExtraHealth_Construct> ExtraHealth_Construct(0x067FD010);
+
+// the game's own: give a list a poison, changing the one it has or adding an ExtraPoison
+// (0x067FD3C0), as using a poison on the weapon in hand does (0x06601EA0)
+typedef void (* _ExtraDataList_SetPoison)(BaseExtraList * list, TESForm * poison);
+static RelocAddr <_ExtraDataList_SetPoison> ExtraDataList_SetPoison(0x06621570);
+
+// an object's full health, from its health component; weapons and armor have one
+static u32 GetFullHealth(TESForm * form)
+{
+	auto * health = form ? DYNAMIC_CAST(form, TESForm, TESHealthForm) : nullptr;
+	return health ? health->health : 0;
+}
+
+static bool Cmd_GetObjectHealth_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESForm * form = nullptr;
+	if(!ExtractArgs(EXTRACT_ARGS, &form)) return true;
+
+	// a reference stands for its base object, and no argument for the calling reference's
+	if(auto * refr = form ? DYNAMIC_CAST(form, TESForm, TESObjectREFR) : nullptr)
+		form = refr->baseForm;
+	if(!form && thisObj)
+		form = thisObj->baseForm;
+
+	*result = GetFullHealth(form);
+
+	if(IsConsoleMode())
+		Console_Print("GetObjectHealth >> %.0f", *result);
+
+	return true;
+}
+
+static float GetHealthOf(BaseExtraList * list, TESForm * item)
+{
+	auto * xHealth = list ? list->Get<ExtraHealth>() : nullptr;
+	return xHealth ? xHealth->health : float(GetFullHealth(item));
+}
+
+// As classic: back at full, the item loses its ExtraHealth; any other value is kept, above full
+// too. A list isn't given an ExtraHealth for an item without a health component.
+static bool SetHealthOf(BaseExtraList * list, TESForm * item, float health)
+{
+	if(!list || !DYNAMIC_CAST(item, TESForm, TESHealthForm)) return false;
+
+	auto * xHealth = list->Get<ExtraHealth>();
+	if(health == float(GetFullHealth(item)))
+	{
+		if(xHealth)
+			BaseExtraList_Remove(list, xHealth, true);
+	}
+	else if(xHealth)
+		xHealth->health = health;
+	else if(void * mem = GameHeap_Allocate(sizeof(ExtraHealth)))
+		BaseExtraList_Add(list, ExtraHealth_Construct(mem, health));
+	else
+		return false;
+
+	return true;
+}
+
+class feGetCurrentHealth : public FoundEquipped
+{
+public:
+	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
+		*result = GetHealthOf(extendData->m_data, entryData->type);
+		return true;
+	}
+};
+
+static bool Cmd_GetEquippedCurrentHealth_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	u32 slotIdx = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &slotIdx)) return true;
+
+	BaseExtraList::Locker lock;
+
+	feGetCurrentHealth getHealth;
+	FindEquipped(thisObj, slotIdx, &getHealth, result);
+
+	if(IsConsoleMode())
+		Console_Print("GetEquippedCurrentHealth %d >> %.2f", slotIdx, *result);
+
+	return true;
+}
+
+// As classic: SetEquippedCurrentHealth gives a whole number; ModEquippedCurrentHealth adds to the
+// health, not below 0.
+class feChangeCurrentHealth : public FoundEquipped
+{
+	float	m_value;
+	bool	m_mod;
+
+public:
+	feChangeCurrentHealth(float value, bool mod) : m_value(value), m_mod(mod) { }
+
+	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
+		float health = m_value;
+		if(m_mod)
+		{
+			health += GetHealthOf(extendData->m_data, entryData->type);
+			if(health < 0)
+				health = 0;
+		}
+
+		SetHealthOf(extendData->m_data, entryData->type, health);
+		return true;
+	}
+};
+
+static bool Cmd_SetEquippedCurrentHealth_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	u32 health = 0, slotIdx = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &health, &slotIdx)) return true;
+
+	BaseExtraList::Locker lock;
+
+	feChangeCurrentHealth setHealth(float(health), false);
+	FindEquipped(thisObj, slotIdx, &setHealth, result);
+
+	return true;
+}
+
+static bool Cmd_ModEquippedCurrentHealth_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	float amount = 0;
+	u32 slotIdx = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &amount, &slotIdx)) return true;
+
+	BaseExtraList::Locker lock;
+
+	feChangeCurrentHealth modHealth(amount, true);
+	FindEquipped(thisObj, slotIdx, &modHealth, result);
+
+	return true;
+}
+
+// GetCurrentHealth and SetCurrentHealth, on an item in the world or, through an inventory
+// reference, one in an inventory, as the charge commands above are
+static bool Cmd_GetCurrentHealth_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	BaseExtraList::Locker lock;
+
+	BaseExtraList * list = IsInventoryRef(thisObj) ? GetInventoryRefList(thisObj, false) : nullptr;
+	if(!list)
+		list = &thisObj->extraList;
+
+	*result = GetHealthOf(list, thisObj->baseForm);
+
+	if(IsConsoleMode())
+		Console_Print("GetCurrentHealth >> %.2f", *result);
+
+	return true;
+}
+
+static bool Cmd_SetCurrentHealth_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	float health = 0;
+	if(!thisObj || !ExtractArgs(EXTRACT_ARGS, &health)) return true;
+
+	TESForm * item = thisObj->baseForm;
+	if(!item || !DYNAMIC_CAST(item, TESForm, TESHealthForm)) return true;
+
+	BaseExtraList::Locker lock;
+
+	bool isInventoryRef = IsInventoryRef(thisObj);
+	BaseExtraList * list = isInventoryRef ? GetInventoryRefList(thisObj, false) : &thisObj->extraList;
+
+	// a stack of items without extra data of their own needs a list only for a health below or
+	// above full
+	if(!list && health != float(GetFullHealth(item)))
+		list = GetInventoryRefList(thisObj, true);
+
+	if(!list || SetHealthOf(list, item, health))
+	{
+		*result = 1;
+		if(isInventoryRef)
+			RefreshInventoryRef(thisObj);
+	}
+
+	return true;
+}
+
+// As classic, a whole number, set as it's given: full takes the ExtraCharge away.
+class feSetCurrentCharge : public FoundEquipped
+{
+	float	m_charge;
+
+public:
+	feSetCurrentCharge(float charge) : m_charge(charge) { }
+
+	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
+		if(!DYNAMIC_CAST(entryData->type, TESForm, TESEnchantableForm)) return true;
+
+		ExtraDataList * list = extendData->m_data;
+		auto * xCharge = list->Get<ExtraCharge>();
+
+		if(m_charge == float(GetFullCharge(entryData->type)))
+		{
+			if(xCharge)
+				BaseExtraList_Remove(list, xCharge, true);
+		}
+		else if(xCharge)
+			xCharge->charge = m_charge;
+		else if(void * mem = GameHeap_Allocate(sizeof(ExtraCharge)))
+			BaseExtraList_Add(list, ExtraCharge_Construct(mem, m_charge));
+
+		return true;
+	}
+};
+
+static bool Cmd_SetEquippedCurrentCharge_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	u32 charge = 0, slotIdx = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &charge, &slotIdx)) return true;
+
+	BaseExtraList::Locker lock;
+
+	feSetCurrentCharge setCharge((float)charge);
+	FindEquipped(thisObj, slotIdx, &setCharge, result);
+
+	return true;
+}
+
+// The poison on the weapon in hand. GetEquippedWeaponPoison gives it; SetEquippedWeaponPoison puts
+// one there, in place of any other; RemoveEquippedWeaponPoison takes it off and gives it.
+class feWeaponPoison : public FoundEquipped
+{
+	TESForm	* m_poison;	// nullptr: only read it
+	bool	m_remove;
+
+public:
+	feWeaponPoison(TESForm * poison, bool remove) : m_poison(poison), m_remove(remove) { }
+
+	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
+		if(!DYNAMIC_CAST(entryData->type, TESForm, TESObjectWEAP)) return true;
+
+		ExtraDataList * list = extendData->m_data;
+		auto * xPoison = list->Get<ExtraPoison>();
+		if(xPoison && xPoison->poison)
+			SetFormResult(result, xPoison->poison->refID);
+
+		if(m_remove)
+		{
+			if(xPoison)
+				BaseExtraList_Remove(list, xPoison, true);
+		}
+		else if(m_poison)
+			ExtraDataList_SetPoison(list, m_poison);
+
+		return true;
+	}
+};
+
+static bool Cmd_GetEquippedWeaponPoison_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	BaseExtraList::Locker lock;
+
+	feWeaponPoison getPoison(nullptr, false);
+	FindEquipped(thisObj, kSlot_Weapon, &getPoison, result);
+
+	if(IsConsoleMode())
+	{
+		TESForm * poison = *result ? LookupFormByID(FormIDFromValue(*result)) : nullptr;
+		Console_Print("GetEquippedWeaponPoison >> %s (%08X)", poison ? GetFullName(poison) : "none", poison ? poison->refID : 0);
+	}
+
+	return true;
+}
+
+// The poison argument is a magic item, as classic's is (ExtractArgs gives its MagicItem part); a
+// weapon's ExtraPoison holds the poison itself, as a form, so the item is cast back to one.
+static bool Cmd_SetEquippedWeaponPoison_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	void * magicItem = nullptr;
+	if(!thisObj || !ExtractArgs(EXTRACT_ARGS, &magicItem) || !magicItem) return true;
+
+	if(!Runtime_DynamicCast(magicItem, RTTI_MagicItem, RTTI_AlchemyItem)) return true;
+	auto * poison = (TESForm *)Runtime_DynamicCast(magicItem, RTTI_MagicItem, RTTI_TESForm);
+	if(!poison) return true;
+
+	BaseExtraList::Locker lock;
+
+	feWeaponPoison setPoison(poison, false);
+	FindEquipped(thisObj, kSlot_Weapon, &setPoison, result);
+
+	*result = 0;	// classic's return here is the old poison's form ID in a number's place
+
+	return true;
+}
+
+static bool Cmd_RemoveEquippedWeaponPoison_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj) return true;
+
+	BaseExtraList::Locker lock;
+
+	feWeaponPoison removePoison(nullptr, true);
+	FindEquipped(thisObj, kSlot_Weapon, &removePoison, result);
+
+	return true;
+}
+
 static ParamInfo kParams_ModEquippedFloat[2] =
 {
 	{ "value", kParamType_Float, 0 },
 	{ "slot", kParamType_Integer, 0 },
+};
+
+static ParamInfo kParams_SetEquippedInt[2] =
+{
+	{ "value", kParamType_Integer, 0 },
+	{ "slot", kParamType_Integer, 0 },
+};
+
+static ParamInfo kParams_OneMagicItem[1] =
+{
+	{ "magic item", kParamType_MagicItem, 0 },
+};
+
+CommandInfo kCommandInfo_GetObjectHealth =
+{
+	"GetObjectHealth", "",
+	0,
+	"returns the health of the object or calling reference",
+	0,
+	1, kParams_OneOptionalInventoryObject,
+	Cmd_GetObjectHealth_Execute
+};
+
+CommandInfo kCommandInfo_GetEquippedCurrentHealth =
+{
+	"GetEquippedCurrentHealth", "GetECHealth",
+	0,
+	"returns the current health of the actor's specified equipment slot",
+	1,
+	1, kParams_OneInt,
+	Cmd_GetEquippedCurrentHealth_Execute
+};
+
+CommandInfo kCommandInfo_SetEquippedCurrentHealth =
+{
+	"SetEquippedCurrentHealth", "SetECHealth",
+	0,
+	"Sets the health of the item in the specified equipment slot",
+	1,
+	2, kParams_SetEquippedInt,
+	Cmd_SetEquippedCurrentHealth_Execute
+};
+
+CommandInfo kCommandInfo_ModEquippedCurrentHealth =
+{
+	"ModEquippedCurrentHealth", "ModECHealth",
+	0,
+	"modifies the health of the item in the specified equipment slot",
+	1,
+	2, kParams_ModEquippedFloat,
+	Cmd_ModEquippedCurrentHealth_Execute
+};
+
+CommandInfo kCommandInfo_GetCurrentHealth =
+{
+	"GetCurrentHealth", "",
+	0,
+	"returns the current health of the reference",
+	1,
+	0, nullptr,
+	Cmd_GetCurrentHealth_Execute
+};
+
+CommandInfo kCommandInfo_SetCurrentHealth =
+{
+	"SetCurrentHealth", "SetCHealth",
+	0,
+	"sets the current health to the specified value",
+	0,
+	1, kParams_OneFloat,
+	Cmd_SetCurrentHealth_Execute
+};
+
+CommandInfo kCommandInfo_SetEquippedCurrentCharge =
+{
+	"SetEquippedCurrentCharge", "SetECCharge",
+	0,
+	"Sets the charge of the item in the specified equipment slot",
+	1,
+	2, kParams_SetEquippedInt,
+	Cmd_SetEquippedCurrentCharge_Execute
+};
+
+CommandInfo kCommandInfo_GetEquippedWeaponPoison =
+{
+	"GetEquippedWeaponPoison", "GetEWPoison",
+	0,
+	"gets the poison on the equipped weapon.",
+	1,
+	0, nullptr,
+	Cmd_GetEquippedWeaponPoison_Execute
+};
+
+CommandInfo kCommandInfo_SetEquippedWeaponPoison =
+{
+	"SetEquippedWeaponPoison", "SetEWPoison",
+	0,
+	"Sets the poison on the equipped weapon.",
+	1,
+	1, kParams_OneMagicItem,
+	Cmd_SetEquippedWeaponPoison_Execute
+};
+
+CommandInfo kCommandInfo_RemoveEquippedWeaponPoison =
+{
+	"RemoveEquippedWeaponPoison", "RemEWPoison",
+	0,
+	"removes the poison on the equipped weapon and returns it.",
+	1,
+	0, nullptr,
+	Cmd_RemoveEquippedWeaponPoison_Execute
 };
 
 CommandInfo kCommandInfo_GetObjectCharge =

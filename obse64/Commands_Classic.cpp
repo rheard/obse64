@@ -593,6 +593,16 @@ extern CommandInfo kCommandInfo_ModEquippedCurrentCharge;
 extern CommandInfo kCommandInfo_GetCurrentCharge;
 extern CommandInfo kCommandInfo_SetCurrentCharge;
 extern CommandInfo kCommandInfo_ModCurrentCharge;
+extern CommandInfo kCommandInfo_SetEquippedCurrentCharge;
+extern CommandInfo kCommandInfo_GetObjectHealth;
+extern CommandInfo kCommandInfo_GetEquippedCurrentHealth;
+extern CommandInfo kCommandInfo_SetEquippedCurrentHealth;
+extern CommandInfo kCommandInfo_ModEquippedCurrentHealth;
+extern CommandInfo kCommandInfo_GetCurrentHealth;
+extern CommandInfo kCommandInfo_SetCurrentHealth;
+extern CommandInfo kCommandInfo_GetEquippedWeaponPoison;
+extern CommandInfo kCommandInfo_SetEquippedWeaponPoison;
+extern CommandInfo kCommandInfo_RemoveEquippedWeaponPoison;
 
 // in Commands_Loops.cpp, with the loops they keep
 extern CommandInfo kCommandInfo_ForEach;
@@ -2778,6 +2788,16 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_ModCurrentCharge,	kRetnType_Default },
 	{ &kCommandInfo_RemoveItemNS,	kRetnType_Default },
 	{ &kCommandInfo_HasSpell,		kRetnType_Default },
+	{ &kCommandInfo_SetEquippedCurrentCharge,	kRetnType_Default },
+	{ &kCommandInfo_GetObjectHealth,	kRetnType_Default },
+	{ &kCommandInfo_GetEquippedCurrentHealth,	kRetnType_Default },
+	{ &kCommandInfo_SetEquippedCurrentHealth,	kRetnType_Default },
+	{ &kCommandInfo_ModEquippedCurrentHealth,	kRetnType_Default },
+	{ &kCommandInfo_GetCurrentHealth,	kRetnType_Default },
+	{ &kCommandInfo_SetCurrentHealth,	kRetnType_Default },
+	{ &kCommandInfo_GetEquippedWeaponPoison,	kRetnType_Form },
+	{ &kCommandInfo_SetEquippedWeaponPoison,	kRetnType_Default },
+	{ &kCommandInfo_RemoveEquippedWeaponPoison,	kRetnType_Form },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
