@@ -2838,6 +2838,26 @@ static const CommandInfo kClassicStubCommand =
 	Cmd_ClassicStub_Execute
 };
 
+// The console command a classic slot named con_ and its name or short name stands for: classic
+// OBSE copied some console commands into the script commands so scripts could run them, naming
+// each copy so (con_TCL). A copy mustn't take the console command's own name: the game looks a
+// name up in the script commands before the console's (0x06948B20), so the console would run the
+// copy, or the stub in its place.
+static const CommandInfo * FindImportedConsoleCommand(const char * slotName)
+{
+	if(_strnicmp(slotName, "con_", 4)) return nullptr;
+
+	const char * name = slotName + 4;
+	for(u32 i = 0; i < kScript_NumConsoleCommands; i++)
+	{
+		const CommandInfo & cmd = g_firstConsoleCommand[i];
+		if((cmd.name && !_stricmp(name, cmd.name)) || (cmd.shortName && *cmd.shortName && !_stricmp(name, cmd.shortName)))
+			return &cmd;
+	}
+
+	return nullptr;
+}
+
 struct ClassicSlot
 {
 	u32			opcode;
@@ -2877,14 +2897,22 @@ void AddClassicCommands()
 		CommandInfo info = kClassicStubCommand;
 		CommandReturnType retnType = kRetnType_Default;
 
-		for(const auto & ported : kPortedCommands)
+		if(const CommandInfo * console = FindImportedConsoleCommand(slot.name))
 		{
-			if(*slot.name && !_stricmp(ported.info->name, slot.name))
+			info = *console;
+			numPorted++;
+		}
+		else
+		{
+			for(const auto & ported : kPortedCommands)
 			{
-				info = *ported.info;
-				retnType = ported.retnType;
-				numPorted++;
-				break;
+				if(*slot.name && !_stricmp(ported.info->name, slot.name))
+				{
+					info = *ported.info;
+					retnType = ported.retnType;
+					numPorted++;
+					break;
+				}
 			}
 		}
 
