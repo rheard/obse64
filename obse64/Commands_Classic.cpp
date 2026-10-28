@@ -603,6 +603,9 @@ extern CommandInfo kCommandInfo_SetCurrentHealth;
 extern CommandInfo kCommandInfo_GetEquippedWeaponPoison;
 extern CommandInfo kCommandInfo_SetEquippedWeaponPoison;
 extern CommandInfo kCommandInfo_RemoveEquippedWeaponPoison;
+extern CommandInfo kCommandInfo_GetHotKeyItem;
+extern CommandInfo kCommandInfo_ClearHotKey;
+extern CommandInfo kCommandInfo_SetHotKeyItem;
 
 // in Commands_Loops.cpp, with the loops they keep
 extern CommandInfo kCommandInfo_ForEach;
@@ -2798,6 +2801,9 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetEquippedWeaponPoison,	kRetnType_Form },
 	{ &kCommandInfo_SetEquippedWeaponPoison,	kRetnType_Default },
 	{ &kCommandInfo_RemoveEquippedWeaponPoison,	kRetnType_Form },
+	{ &kCommandInfo_GetHotKeyItem,	kRetnType_Form },
+	{ &kCommandInfo_ClearHotKey,	kRetnType_Default },
+	{ &kCommandInfo_SetHotKeyItem,	kRetnType_Default },
 };
 
 static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)

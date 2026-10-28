@@ -991,6 +991,229 @@ static bool Cmd_RemoveEquippedWeaponPoison_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// classic OBSE's quick key commands (Commands_Classic.cpp registers them)
+
+// The player's eight quick keys, kept as classic Oblivion kept them: a list of forms for each key,
+// holding one form in practice, as the game's menus replace what's there (0x067248F0), and saved
+// by form ID. An item on a key also has an ExtraQuickKey with the key's index on its stack in the
+// player's inventory: pressing the key uses the stack carrying it (0x0663FD40 finds it), and the
+// next key pressed takes an item with no such stack off its key (0x06724B90), as it does a spell
+// the player doesn't have. The Unreal quick key menus show the lists, read again whenever one opens
+// and after each key pressed.
+
+// 20 NiTPointerList <TESForm>
+struct QuickKeyList
+{
+	struct Node
+	{
+		Node	* next;	// 00
+		Node	* prev;	// 08
+		TESForm	* form;	// 10
+	};
+
+	void	** vtbl;	// 00 +08 allocates a node, +10 frees one
+	Node	* start;	// 08
+	Node	* end;		// 10
+	u32		numItems;	// 18
+	u32		pad1C;		// 1C
+};
+
+static_assert(sizeof(QuickKeyList) == 0x20);
+
+enum { kNumQuickKeys = 8 };
+
+static RelocPtr <QuickKeyList> g_quickKeys(0x09483210);
+
+typedef void (* _QuickKeyList_RemoveAll)(QuickKeyList * list);
+static RelocAddr <_QuickKeyList_RemoveAll> QuickKeyList_RemoveAll(0x065626C0);
+
+typedef QuickKeyList::Node * (* _QuickKeyList_AllocateNode)(QuickKeyList * list);
+enum { kQuickKeyList_AllocateNode = 1 };
+
+// The game's own, as its menus use them: mark an item's stack with a key (a stack without a list of
+// its own is given one), or take a key's mark off an item's stacks. Both tell the Unreal inventory
+// (Register_QuickKey_Item). Marking also marks the copy of a worn item the actor's process keeps,
+// and refuses a stack that can't be worn (a bound item's), saying so on screen.
+typedef void (* _InventoryChanges_SetQuickKey)(ExtraContainerChanges::Data * changes, TESForm * item, ExtraDataList * list, u8 key);
+static RelocAddr <_InventoryChanges_SetQuickKey> InventoryChanges_SetQuickKey(0x06649070);
+typedef void (* _InventoryChanges_ClearQuickKey)(ExtraContainerChanges::Data * changes, TESForm * item, s32 key);
+static RelocAddr <_InventoryChanges_ClearQuickKey> InventoryChanges_ClearQuickKey(0x066471E0);
+
+static ExtraContainerChanges::Data * GetPlayerInventoryChanges()
+{
+	TESObjectREFR * player = PlayerCharacter::Get();
+	auto * changes = player ? player->extraList.Get<ExtraContainerChanges>() : nullptr;
+	return changes ? changes->data : nullptr;
+}
+
+// takes what's on a key (0-7) off it, and its mark off the item's stacks, as the game does before
+// putting something else there
+static void ClearQuickKey(u32 key)
+{
+	QuickKeyList & keyList = ((QuickKeyList *)g_quickKeys)[key];
+	auto * changes = GetPlayerInventoryChanges();
+
+	for(auto * node = keyList.start; node; node = node->next)
+		if(node->form && node->form->typeID != kFormType_Spell && changes)
+			InventoryChanges_ClearQuickKey(changes, node->form, key);
+
+	QuickKeyList_RemoveAll(&keyList);
+}
+
+// Puts a form on a key (0-7) in place of what's there, and for an item, marks the player's stack of
+// it: one worn, else the first, as classic marked the first. An item can work from one key only, so
+// it's taken off any other; a spell can be on several, as the game's menus allow.
+static void SetQuickKey(u32 key, TESForm * form)
+{
+	ClearQuickKey(key);
+
+	QuickKeyList * keys = g_quickKeys;
+	bool isSpell = form->typeID == kFormType_Spell;
+
+	if(!isSpell)
+	{
+		for(u32 other = 0; other < kNumQuickKeys; other++)
+		{
+			for(auto * node = keys[other].start; node; node = node->next)
+			{
+				if(node->form == form)
+				{
+					ClearQuickKey(other);
+					break;
+				}
+			}
+		}
+	}
+
+	QuickKeyList & keyList = keys[key];
+	auto allocateNode = reinterpret_cast <_QuickKeyList_AllocateNode>(keyList.vtbl[kQuickKeyList_AllocateNode]);
+	auto * node = allocateNode(&keyList);
+	if(!node) return;
+
+	node->form = form;
+	node->next = nullptr;
+	node->prev = keyList.end;
+	if(keyList.end)
+		keyList.end->next = node;
+	else
+		keyList.start = node;
+	keyList.end = node;
+	keyList.numItems++;
+
+	if(isSpell) return;
+
+	auto * changes = GetPlayerInventoryChanges();
+	if(!changes) return;
+
+	std::vector <InventoryStack> stacks;
+	GetInventoryStacks(PlayerCharacter::Get(), &stacks);
+
+	const InventoryStack * marked = nullptr;
+	for(const auto & stack : stacks)
+	{
+		if(stack.item != form || stack.count <= 0) continue;
+
+		if(!marked)
+			marked = &stack;
+
+		if(stack.list && (stack.list->Contains(kExtraData_Worn) || stack.list->Contains(kExtraData_WornLeft)))
+		{
+			marked = &stack;
+			break;
+		}
+	}
+
+	// As classic, an item the player doesn't have stays on the key; the next key pressed takes it off.
+	// The game marks no stack that can't be worn, and would say so on screen; this says nothing.
+	if(!marked)
+	{
+		if(IsConsoleMode())
+			Console_Print("SetHotKeyItem >> Item not found in inventory");
+	}
+	else if(!marked->list || !marked->list->Contains(kExtraData_CannotWear))
+		InventoryChanges_SetQuickKey(changes, form, marked->list, key);
+}
+
+static bool Cmd_GetHotKeyItem_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 key = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &key)) return true;
+
+	if(key >= 1 && key <= kNumQuickKeys)
+	{
+		BaseExtraList::Locker lock;
+
+		const QuickKeyList & keyList = ((QuickKeyList *)g_quickKeys)[key - 1];
+		TESForm * form = keyList.start ? keyList.start->form : nullptr;
+		if(form)
+		{
+			SetFormResult(result, form->refID);
+
+			if(IsConsoleMode())
+				Console_Print("GetHotKeyItem %d >> %s (%08X)", key, GetFullName(form), form->refID);
+		}
+	}
+
+	return true;
+}
+
+static bool Cmd_ClearHotKey_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 key = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &key)) return true;
+
+	if(key >= 1 && key <= kNumQuickKeys)
+	{
+		BaseExtraList::Locker lock;
+		ClearQuickKey(key - 1);
+	}
+
+	return true;
+}
+
+// classic's parameters, whose item lets only an item through, though the command is for spells too
+static ParamInfo kParams_SetHotKeyItem[2] =
+{
+	{ "hotkey", kParamType_Integer, 0 },
+	{ "item", kParamType_InventoryObject, 0 },
+};
+
+// what SetHotKeyItem reads its arguments with again when they aren't an item, for a spell
+static ParamInfo kParams_SetHotKeySpell[2] =
+{
+	{ "hotkey", kParamType_Integer, 0 },
+	{ "spell", kParamType_SpellItem, 0 },
+};
+
+static bool Cmd_SetHotKeyItem_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 key = 0;
+	TESForm * form = nullptr;
+
+	u32 argsOffset = *opcodeOffsetPtr;
+	if(!ExtractArgs(EXTRACT_ARGS, &key, &form))
+	{
+		*opcodeOffsetPtr = argsOffset;
+		form = nullptr;
+		if(!ExtractArgs(kParams_SetHotKeySpell, scriptData, opcodeOffsetPtr, thisObj, containingObj, script, locals, &key, &form))
+			return true;
+	}
+
+	if(form && key >= 1 && key <= kNumQuickKeys)
+	{
+		BaseExtraList::Locker lock;
+		SetQuickKey(key - 1, form);
+	}
+
+	return true;
+}
+
 static ParamInfo kParams_ModEquippedFloat[2] =
 {
 	{ "value", kParamType_Float, 0 },
@@ -1106,6 +1329,36 @@ CommandInfo kCommandInfo_RemoveEquippedWeaponPoison =
 	1,
 	0, nullptr,
 	Cmd_RemoveEquippedWeaponPoison_Execute
+};
+
+CommandInfo kCommandInfo_GetHotKeyItem =
+{
+	"GetHotKeyItem", "",
+	0,
+	"returns the item or spell bound to the specified hotkey",
+	0,
+	1, kParams_OneInt,
+	Cmd_GetHotKeyItem_Execute
+};
+
+CommandInfo kCommandInfo_ClearHotKey =
+{
+	"ClearHotKey", "ClearHotKeyItem",
+	0,
+	"clears the item or spell associated with the specified hotkey",
+	0,
+	1, kParams_OneInt,
+	Cmd_ClearHotKey_Execute
+};
+
+CommandInfo kCommandInfo_SetHotKeyItem =
+{
+	"SetHotKeyItem", "",
+	0,
+	"sets the spell or item associated with a hotkey",
+	0,
+	2, kParams_SetHotKeyItem,
+	Cmd_SetHotKeyItem_Execute
 };
 
 CommandInfo kCommandInfo_GetObjectCharge =
