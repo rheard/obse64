@@ -5,10 +5,7 @@
 #include "obse64_common/obse64_version.h"
 
 const wchar_t* hHook_ShowVersion_FormatString =
-	L"v%s (%s) CorrelationID:%s [OBSE64 "
-	__PREPRO_TOKEN_STR__(OBSE_VERSION_INTEGER) "."
-	__PREPRO_TOKEN_STR__(OBSE_VERSION_INTEGER_MINOR) "."
-	__PREPRO_TOKEN_STR__(OBSE_VERSION_INTEGER_BETA) "]";
+	L"v%s (%s) CorrelationID:%s [xOBSE64 " XOBSE64_VERSION_STRING "]";
 
 typedef void (*_FormatVersion)(void*, const wchar_t*, const wchar_t*, const wchar_t*, const wchar_t*);
 RelocAddr<_FormatVersion> ShowVersion_Call(0x0491BCB0 + 0x2E2);

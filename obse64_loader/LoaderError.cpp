@@ -18,5 +18,5 @@ void PrintLoaderError(const char * fmt, ...)
 	vsprintf_s(buf, sizeof(buf), fmt, args);
 	va_end(args);
 
-	MessageBox(NULL, buf, "OBSE64 Loader", MB_OK | MB_ICONEXCLAMATION);
+	MessageBox(NULL, buf, "xOBSE64 Loader", MB_OK | MB_ICONEXCLAMATION);
 }

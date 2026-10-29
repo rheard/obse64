@@ -664,9 +664,7 @@ void PluginManager::reportPluginErrors()
 	message += "\nExit game? (yes highly suggested)";
 
 	int result = MessageBox(0, message.c_str(),
-		"OBSE Plugin Loader (" __PREPRO_TOKEN_STR__(OBSE_VERSION_INTEGER) "."
-		__PREPRO_TOKEN_STR__(OBSE_VERSION_INTEGER_MINOR) "."
-		__PREPRO_TOKEN_STR__(OBSE_VERSION_INTEGER_BETA) ")",
+		"xOBSE64 Plugin Loader (" XOBSE64_VERSION_STRING ")",
 		MB_YESNO);
 
 	if(result == IDYES)
@@ -680,7 +678,7 @@ void PluginManager::updateAddressLibraryPrompt()
 {
 	int result = MessageBox(0,
 		"DLL plugins you have installed require a new version of the Address Library. Either this is a new install, or Oblivion Remastered was just updated. Visit the Address Library webpage for updates?",
-		"OBSE64 Plugin Loader", MB_YESNO);
+		"xOBSE64 Plugin Loader", MB_YESNO);
 
 	if(result == IDYES)
 	{

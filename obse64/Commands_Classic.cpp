@@ -2470,7 +2470,7 @@ static bool Cmd_RestoreIP_Execute(COMMAND_ARGS)
 
 bool Cmd_Expression_Parse(u32 numParams, const ParamInfo * paramInfo, ScriptLineBuffer * lineBuf, ScriptBuffer * scriptBuf)
 {
-	Console_Print("OBSE64 can't compile OBSE expressions yet, so this command only works in compiled scripts");
+	Console_Print("xOBSE64 can't compile OBSE expressions yet, so this command only works in compiled scripts");
 	return false;
 }
 
@@ -2822,7 +2822,7 @@ static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
 		u32 scriptID = script ? reinterpret_cast <TESForm *>(script)->refID : 0;
 
 		_MESSAGE("classic command %s (%04X) called by script %08X is not implemented yet", name, opcode, scriptID);
-		Console_Print("OBSE64: %s is not implemented yet (script %08X)", name, scriptID);
+		Console_Print("xOBSE64: %s is not implemented yet (script %08X)", name, scriptID);
 	}
 
 	return false;
@@ -2832,7 +2832,7 @@ static const CommandInfo kClassicStubCommand =
 {
 	"", "",
 	0,
-	"classic OBSE command that is not implemented in OBSE64 yet",
+	"classic OBSE command that is not implemented in xOBSE64 yet",
 	0,
 	0, nullptr,
 	Cmd_ClassicStub_Execute

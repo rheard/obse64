@@ -122,11 +122,11 @@ int main(int argc, char ** argv)
 
 			if(msStore)
 			{
-				PrintLoaderError("You have the MS Store/Gamepass version of Oblivion Remastered, which is not compatible with OBSE64.");
+				PrintLoaderError("You have the MS Store/Gamepass version of Oblivion Remastered, which is not compatible with xOBSE64.");
 			}
 			else if(usedCustomRuntimeName)
 			{
-				PrintLoaderError("Couldn't find %s. You have customized the runtime name via OBSE64's .ini file, and that file does not exist. This can usually be fixed by removing the RuntimeName line from the .ini file.)", procName.c_str());
+				PrintLoaderError("Couldn't find %s. You have customized the runtime name via OBSE\\obse.ini, and that file does not exist. This can usually be fixed by removing the RuntimeName line from the .ini file.)", procName.c_str());
 			}
 			else
 			{
@@ -157,7 +157,7 @@ int main(int argc, char ** argv)
 
 		if(usedCustomRuntimeName)
 		{
-			PrintLoaderError("You have customized the runtime name via OBSE64's .ini file. Version errors can usually be fixed by removing the RuntimeName line from the .ini file.");
+			PrintLoaderError("You have customized the runtime name via OBSE\\obse.ini. Version errors can usually be fixed by removing the RuntimeName line from the .ini file.");
 		}
 
 		return 1;
@@ -186,10 +186,10 @@ int main(int argc, char ** argv)
 		if(!tempFile.open(dllPath.c_str()))
 		{
 			PrintLoaderError(
-				"Couldn't find OBSE64 DLL (%s).\n"
-				"Either you have not installed OBSE64 correctly, or a new version of Oblivion Remastered has been released.\n"
-				"Please make sure you have installed OBSE64 correctly and are running it from your Oblivion Remastered folder.\n"
-				"If a game patch was released since you last ran the game, please check the website for updates.\n"
+				"Couldn't find xOBSE64's DLL (%s).\n"
+				"Either you have not installed xOBSE64 correctly, or a new version of Oblivion Remastered has been released.\n"
+				"Please make sure you have installed xOBSE64 correctly and are running it from your Oblivion Remastered folder.\n"
+				"If a game patch was released since you last ran the game, please check " XOBSE64_RELEASES_URL " for updates.\n"
 				"You have game version %d.%d.%d installed. The loader is not lying to you.\n"
 				"Check your game installation if you are still confused.", dllPath.c_str(), procHookInfo.getVersionMajor(), procHookInfo.getVersionMinor(), procHookInfo.getVersionBuild());
 			return 1;
@@ -259,7 +259,7 @@ int main(int argc, char ** argv)
 			}
 
 			PrintLoaderError(
-				"Bad OBSE64 DLL (%s).\n"
+				"Bad xOBSE64 DLL (%s).\n"
 				"Do not rename files; it will not magically make anything work.\n"
 				"%08X %08X %08X", dllPath.c_str(), procHookInfo.packedVersion, dllVersion, trustError);
 

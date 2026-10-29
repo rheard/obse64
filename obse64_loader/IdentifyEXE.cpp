@@ -298,7 +298,7 @@ bool IdentifyEXE(const char * procName, bool isEditor, std::string * dllSuffix, 
 	hookInfo->version = version;
 	hookInfo->packedVersion = MAKE_EXE_VERSION(version >> 48, version >> 32, version >> 16);
 
-	if(productName == "OBSE64")
+	if(productName == "OBSE64" || productName == "xOBSE64")
 	{
 		_MESSAGE("found an OBSE64 component");
 		return false;
@@ -438,13 +438,13 @@ bool VersionCheck(const ProcHookInfo & procInfo, u64 RUNTIME_VERSION)
 		{
 			// different build
 			PrintLoaderError(
-				"This version of OBSE64 is compatible with the %s version of the game.\n"
-				"You have the %s version of the game. Please download the correct version from the website.\n"
+				"This version of xOBSE64 is compatible with the %s version of the game.\n"
+				"You have the %s version of the game, which xOBSE64 doesn't support.\n"
 				"Runtime: %d.%d.%d\n"
-				"OBSE64: %d.%d.%d",
+				"xOBSE64: %s",
 				expectedProcTypeName, foundProcTypeName,
 				GET_EXE_VERSION_MAJOR(versionInternal), GET_EXE_VERSION_MINOR(versionInternal), GET_EXE_VERSION_BUILD(versionInternal),
-				OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA);
+				XOBSE64_VERSION_STRING);
 
 			return false;
 		}
@@ -455,32 +455,31 @@ bool VersionCheck(const ProcHookInfo & procInfo, u64 RUNTIME_VERSION)
 #if OBSE_TARGETING_BETA_VERSION
 		if(versionInternal == CURRENT_RELEASE_RUNTIME)
 			PrintLoaderError(
-				"You are using the version of OBSE64 intended for the Steam beta branch (%d.%d.%d).\n"
-				"Download and install the non-beta branch version (%s) from http://obse.silverlock.org/.",
-				OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA, CURRENT_RELEASE_OBSE_STR);
+				"You are using the version of xOBSE64 intended for the Steam beta branch (%s).\n"
+				"Download and install the non-beta branch version from " XOBSE64_RELEASES_URL ".",
+				XOBSE64_VERSION_STRING);
 		else
 			PrintLoaderError(
-				"You are using Oblivion Remastered version %d.%d.%d, which is out of date and incompatible with this version of OBSE64 (%d.%d.%d). Update to the latest beta version.",
+				"You are using Oblivion Remastered version %d.%d.%d, which is out of date and incompatible with this version of xOBSE64 (%s). Update to the latest beta version.",
 				GET_EXE_VERSION_MAJOR(versionInternal), GET_EXE_VERSION_MINOR(versionInternal), GET_EXE_VERSION_BUILD(versionInternal),
-				OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA);
+				XOBSE64_VERSION_STRING);
 #else
 		PrintLoaderError(
-			"You are using Oblivion Remastered version %d.%d.%d, which is out of date and incompatible with this version of OBSE64 (%d.%d.%d). Update to the latest version.",
+			"You are using Oblivion Remastered version %d.%d.%d, which is out of date and incompatible with this version of xOBSE64 (%s). Update to the latest version.",
 			GET_EXE_VERSION_MAJOR(versionInternal), GET_EXE_VERSION_MINOR(versionInternal), GET_EXE_VERSION_BUILD(versionInternal),
-			OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA);
+			XOBSE64_VERSION_STRING);
 #endif
 	}
 	else if(procInfo.version > kCurVersion)
 	{
 		PrintLoaderError(
-			"You are using a newer version of Oblivion Remastered than this version of OBSE64 supports.\n"
-			"If this version just came out, please be patient while we update our code.\n"
-			"In the meantime, please check http://obse.silverlock.org for updates.\n"
-			"Do not email about this!\n"
+			"You are using a newer version of Oblivion Remastered than this version of xOBSE64 supports.\n"
+			"If this version just came out, please be patient while xOBSE64 is updated for it.\n"
+			"In the meantime, please check " XOBSE64_RELEASES_URL " for updates.\n"
 			"Runtime: %d.%d.%d\n"
-			"OBSE64: %d.%d.%d",
+			"xOBSE64: %s",
 			GET_EXE_VERSION_MAJOR(versionInternal), GET_EXE_VERSION_MINOR(versionInternal), GET_EXE_VERSION_BUILD(versionInternal),
-			OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA);
+			XOBSE64_VERSION_STRING);
 	}
 
 	return true;

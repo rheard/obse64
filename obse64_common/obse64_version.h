@@ -24,6 +24,9 @@
 #define XOBSE64_VERSION_PATCH		0
 #define XOBSE64_VERSION_STRING		"0.3.0"
 
+// where the loader sends players for a version of xOBSE64 that fits their game
+#define XOBSE64_RELEASES_URL		"https://github.com/rheard/xobse64/releases"
+
 //	x-------	major
 //	-xxx----	minor
 //	----xxx-	build
