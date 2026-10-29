@@ -15,6 +15,15 @@
 // what GetOBSEVersion reports with the classic commands
 #define OBSE_VERSION_CLASSIC_REPORTED	10
 
+// xOBSE64's own version, which its releases, its files' properties, its logs and GetOBSEVersion's
+// console line carry. Plugins are still given OBSE64's above (PACKED_OBSE_VERSION, which a
+// plugin's seVersionRequired is checked against): that's the plugin interface xOBSE64 has, so a
+// plugin that needs a later OBSE64 isn't loaded. Keep the string in step with the numbers.
+#define XOBSE64_VERSION_MAJOR		0
+#define XOBSE64_VERSION_MINOR		3
+#define XOBSE64_VERSION_PATCH		0
+#define XOBSE64_VERSION_STRING		"0.3.0"
+
 //	x-------	major
 //	-xxx----	minor
 //	----xxx-	build

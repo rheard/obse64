@@ -1,6 +1,8 @@
+#include "obse64_common/obse64_version.h"
+
 1 VERSIONINFO
- FILEVERSION 0,1,0,0
- PRODUCTVERSION 0,1,0,0
+ FILEVERSION XOBSE64_VERSION_MAJOR,XOBSE64_VERSION_MINOR,XOBSE64_VERSION_PATCH,0
+ PRODUCTVERSION XOBSE64_VERSION_MAJOR,XOBSE64_VERSION_MINOR,XOBSE64_VERSION_PATCH,0
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -15,12 +17,12 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "FileDescription", "Oblivion Remastered Script Extender (OBSE64) Loader"
-			VALUE "FileVersion", "1.0.0"
-            VALUE "InternalName", "OBSE64"
+            VALUE "FileDescription", "xOBSE64 loader"
+			VALUE "FileVersion", XOBSE64_VERSION_STRING
+            VALUE "InternalName", "xOBSE64"
             VALUE "LegalCopyright", "Copyright (C) 2006-2025"
-            VALUE "ProductName", "OBSE64"
-			VALUE "ProductVersion", "1.0.0"
+            VALUE "ProductName", "xOBSE64"
+			VALUE "ProductVersion", XOBSE64_VERSION_STRING
         END
     END
     BLOCK "VarFileInfo"

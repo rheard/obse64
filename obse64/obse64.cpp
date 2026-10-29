@@ -104,8 +104,8 @@ void OBSE64_Preinit()
 	SYSTEMTIME now;
 	GetSystemTime(&now);
 
-	_MESSAGE("OBSE64 runtime: initialize (version = %d.%d.%d %08X %04d-%02d-%02d %02d:%02d:%02d, os = %s)",
-		OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA, RUNTIME_VERSION,
+	_MESSAGE("xOBSE64 runtime: initialize (version = %s, OBSE64 %d.%d.%d, %08X %04d-%02d-%02d %02d:%02d:%02d, os = %s)",
+		XOBSE64_VERSION_STRING, OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA, RUNTIME_VERSION,
 		now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond,
 		getOSInfoStr().c_str());
 

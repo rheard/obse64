@@ -80,8 +80,8 @@ static bool Cmd_GetOBSEVersion_Execute(COMMAND_ARGS)
 
 	if(IsConsoleMode())
 	{
-		Console_Print("OBSE64 version: %d.%d.%d, release idx %d, runtime %08X, reported version %d",
-			OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA,
+		Console_Print("xOBSE64 version: %s (OBSE64 %d.%d.%d, release idx %d), runtime %08X, classic version reported %d",
+			XOBSE64_VERSION_STRING, OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA,
 			OBSE_VERSION_RELEASEIDX, RUNTIME_VERSION, OBSE_VERSION_CLASSIC_REPORTED);
 	}
 
