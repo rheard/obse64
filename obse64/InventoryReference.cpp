@@ -2,6 +2,7 @@
 #include "GameObjects.h"
 #include "GameRTTI.h"
 #include <algorithm>
+#include <cstring>
 #include <map>
 
 // TESObjectREFR's constructor, which gives the reference a new form ID and adds it to the game's
@@ -126,11 +127,27 @@ static void DeleteRef(TESObjectREFR * ref)
 	(*reinterpret_cast <_DeletingDestructor * const *>(ref))[kVirtual_DeletingDestructor](ref, 1);
 }
 
+// The game's RemoveAll and CopyFrom free a list's extra data without clearing its bits in the
+// list's presence bitfield (its remove of one, 0x0661D210, clears them), so a reference given
+// another stack went on saying it had what the stack before it had: the charge of a stack before,
+// with none behind the bit. Sets the bits from the extra data the list has.
+static void SyncPresenceBits(BaseExtraList * list)
+{
+	memset(list->m_presence, 0, sizeof(list->m_presence));
+
+	for(BSExtraData * data = list->m_data; data; data = data->m_next)
+	{
+		if(data->m_type < kExtraData_Max)
+			list->m_presence[data->m_type >> 3] |= u8(1 << (data->m_type & 7));
+	}
+}
+
 // takes a stack's extra data away from the reference, as the game does after an item's script
 static void ClearExtraData(TESObjectREFR * ref)
 {
 	BaseExtraList_SetScriptLocals(&ref->extraList, nullptr);
 	BaseExtraList_RemoveAll(&ref->extraList, true);
+	SyncPresenceBits(&ref->extraList);
 }
 
 TESObjectREFR * CreateInventoryRef()
@@ -159,7 +176,10 @@ void SetInventoryRef(TESObjectREFR * ref, const InventoryStack & stack)
 
 	ref->baseForm = stack.item;
 	if(stack.list)
+	{
 		BaseExtraList_CopyFrom(&ref->extraList, stack.list);
+		SyncPresenceBits(&ref->extraList);
+	}
 
 	s_inventoryRefs[ref] = stack;
 }

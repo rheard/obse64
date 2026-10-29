@@ -563,7 +563,8 @@ static bool Cmd_ModEquippedCurrentCharge_Execute(COMMAND_ARGS)
 
 // GetCurrentCharge, SetCurrentCharge and ModCurrentCharge, on an item in the world or one in an
 // inventory, through an inventory reference (ForEach's), whose stack's own extra data they read and
-// change. An inventory reference's own copy is read only once its stack is gone.
+// change. An inventory reference's own copy is read when its stack has no list of its own (so is
+// at full), or is gone.
 static bool Cmd_GetCurrentCharge_Execute(COMMAND_ARGS)
 {
 	*result = 0;
