@@ -39,3 +39,6 @@ build/*
 out/*
 CMakeSettings.json
 obse64_update
+
+# IDEs
+.idea/
