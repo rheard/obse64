@@ -1,11 +1,22 @@
 name: testbuild
-on: [push]
+# Builds every push to a branch, and every pull request, and keeps the DLL and the loader as the
+# run's artifact (on the run's page, under Artifacts) for testing in game.
+on:
+    push:
+        branches: ['**']
+    pull_request:
 jobs:
     run-testbuild:
         runs-on: windows-latest
         steps:
-            - uses: actions/checkout@v2
+            - uses: actions/checkout@v4
               with:
                 path: obse64
             - run: cmake -B obse64/build -S obse64 -DCMAKE_INSTALL_PREFIX=extern obse64
             - run: cmake --build obse64/build --config Release
+            - uses: actions/upload-artifact@v4
+              with:
+                name: xOBSE64-${{ github.sha }}
+                path: |
+                    obse64/build/obse64/Release/obse64_1_512_105.dll
+                    obse64/build/obse64_loader/Release/obse64_loader.exe

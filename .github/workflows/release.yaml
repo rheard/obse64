@@ -1,0 +1,71 @@
+name: release
+# Builds a release of xOBSE64 and drafts it on the Releases page, for you to look over and publish.
+# Start it with "Run workflow" on the Actions tab (on master), or by pushing a tag such as v0.3.0.
+# The version is XOBSE64_VERSION_STRING in obse64_common/obse64_version.h; a tag has to be "v" and
+# that version. The release's notes are CHANGELOG.md's section for the version. Publishing the
+# draft creates its tag, at the commit it was built from, if the tag doesn't exist yet.
+on:
+    push:
+        tags: ['v*']
+    workflow_dispatch:
+permissions:
+    contents: write
+jobs:
+    release:
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Read the version
+              id: version
+              shell: pwsh
+              run: |
+                $header = Get-Content obse64_common/obse64_version.h -Raw
+                $match = [regex]::Match($header, '#define\s+XOBSE64_VERSION_STRING\s+"([^"]+)"')
+                if (-not $match.Success) { throw 'obse64_common/obse64_version.h has no XOBSE64_VERSION_STRING' }
+                $version = $match.Groups[1].Value
+                if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+                    throw "The tag is $env:GITHUB_REF_NAME, but obse64_version.h says $version"
+                }
+                Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+
+            - name: Build
+              run: |
+                cmake -B build -S . -DCMAKE_INSTALL_PREFIX=extern
+                cmake --build build --config Release
+
+            - name: Package
+              shell: pwsh
+              run: |
+                $name = 'xOBSE64-${{ steps.version.outputs.version }}'
+                New-Item -ItemType Directory $name, "$name-pdb" | Out-Null
+                Copy-Item build/obse64/Release/obse64_1_512_105.dll, build/obse64_loader/Release/obse64_loader.exe, README.md, CHANGELOG.md, LICENSE -Destination $name
+                Copy-Item build/obse64/Release/obse64_1_512_105.pdb, build/obse64_loader/Release/obse64_loader.pdb -Destination "$name-pdb"
+                Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+                Compress-Archive -Path "$name-pdb/*" -DestinationPath "$name-pdb.zip"
+
+            - name: Write the notes
+              shell: pwsh
+              run: |
+                $version = '${{ steps.version.outputs.version }}'
+                $lines = Get-Content CHANGELOG.md
+                $start = -1
+                for ($i = 0; $i -lt $lines.Count; $i++) {
+                    if ($lines[$i] -match "^## $([regex]::Escape($version))(\s|$)") { $start = $i; break }
+                }
+                if ($start -lt 0) { throw "CHANGELOG.md has no section for $version" }
+                $end = $lines.Count
+                for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+                    if ($lines[$i] -match '^## ') { $end = $i; break }
+                }
+                $notes = if ($end -gt $start + 1) { ($lines[($start + 1)..($end - 1)] -join "`n").Trim() } else { '' }
+                if (-not $notes) { throw "CHANGELOG.md's section for $version is empty" }
+                Set-Content notes.md -Value $notes -Encoding utf8
+
+            - name: Draft the release
+              shell: pwsh
+              env:
+                GH_TOKEN: ${{ github.token }}
+              run: |
+                $version = '${{ steps.version.outputs.version }}'
+                gh release create "v$version" "xOBSE64-$version.zip" "xOBSE64-$version-pdb.zip" --draft --title "xOBSE64 $version" --notes-file notes.md --target $env:GITHUB_SHA
