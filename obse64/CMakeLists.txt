@@ -121,6 +121,14 @@ source_group(
 		SteamInit.h
 		CommandTable.cpp
 		CommandTable.h
+		ObseExpression.cpp
+		ObseExpression.h
+		FunctionScripts.cpp
+		FunctionScripts.h
+		InventoryReference.cpp
+		InventoryReference.h
+		PlayerControls.cpp
+		PlayerControls.h
 		ParamInfos.cpp
 		ParamInfos.h
 		MersenneTwister.cpp
@@ -136,6 +144,12 @@ source_group(
 		Commands_Player.cpp
 		Commands_Math.cpp
 		Commands_MiscReference.cpp
+		Commands_Classic.cpp
+		Commands_Classic.h
+		Commands_String.cpp
+		Commands_Events.cpp
+		Commands_Loops.cpp
+		ClassicCommandTable.inl
 )
 
 # ---- Create library ----

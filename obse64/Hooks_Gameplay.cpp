@@ -1,18 +1,26 @@
 #include "Hooks_Gameplay.h"
+#include "Commands_Classic.h"
+#include "PlayerControls.h"
 #include "obse64_common/BranchTrampoline.h"
 #include "obse64_common/Relocation.h"
 
 RelocAddr <uintptr_t> OblivionThread_Target(0x065D2070 + 0x1208);
 RelocAddr <uintptr_t> UnrealGameThread_Target(0x03907660 + 0x53);
 
+// once each pass of the Oblivion thread's main loop, before the frame is run
 void OblivionThreadHook(const char * dbgStr)
 {
+	// a loop runs within one script's run, so any still going was left by a script returning in it
+	ResetLoops();
 
+	ProcessInputEvents();
 }
 
+// once each Unreal frame, early in it, on the game thread
 void UnrealGameThreadHook()
 {
-
+	PlayerControls_Update();
+	UpdateKeyInput();
 }
 
 void Hooks_Gameplay_Apply()

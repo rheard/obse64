@@ -1,10 +1,57 @@
 #include "obse64/GameConsole.h"
+#include "obse64_common/Log.h"
 #include "obse64_common/Relocation.h"
+#include "obse64_common/Utilities.h"
+#include <cstring>
+#include <string>
 
 RelocPtr <u8> g_bConsoleMode(0x094800B8);
 RelocPtr <std::uintptr_t> _Console_Print(0x0656A7A0);
 
+// Console_Print prints only while this is set, and the game sets it only around a typed command
+// (RVA 0x06555280), so lines printed by running scripts are dropped.
+RelocPtr <u8> g_bConsoleOutputEnabled(0x09480180);
+
 bool IsConsoleMode()
 {
 	return *g_bConsoleMode;
+}
+
+void ScriptConsolePrint(const char * text)
+{
+	static int s_logPrints = -1;
+	if(s_logPrints < 0)
+	{
+		u32 value = 1;
+		getConfigOption_u32("Debug", "LogScriptPrints", &value);
+		s_logPrints = value ? 1 : 0;
+	}
+
+	u8 outputEnabled = *g_bConsoleOutputEnabled;
+	*g_bConsoleOutputEnabled = 1;
+
+	// long text goes in pieces, as classic OBSE printed it: the console's printer copies a line
+	// into a 2048-byte buffer without checking its length (0x06633400)
+	const size_t kMaxPiece = 500;
+	size_t len = strlen(text);
+	size_t start = 0;
+	do
+	{
+		size_t pieceLen = len - start;
+		if(pieceLen > kMaxPiece) pieceLen = kMaxPiece;
+
+		std::string piece(text + start, pieceLen);
+		Console_Print("%s", piece.c_str());
+		start += pieceLen;
+	}
+	while(start < len);
+
+	*g_bConsoleOutputEnabled = outputEnabled;
+
+	// written out at once, so the lines before a crash aren't lost with it
+	if(s_logPrints)
+	{
+		_MESSAGE("console: %s", text);
+		DebugLog::flush();
+	}
 }

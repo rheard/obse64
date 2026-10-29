@@ -1,5 +1,6 @@
 #pragma once
 
+#include "obse64_common/Relocation.h"
 #include "obse64_common/Types.h"
 
 enum ExtraDataType
@@ -163,3 +164,29 @@ struct ExtraDataList : public BaseExtraList
 };
 
 static_assert(sizeof(ExtraDataList) == 0x20);
+
+struct ScriptLocals;
+
+// The game's allocator (Unreal's FMemory, 16-byte aligned), which extra data and forms come from.
+typedef void * (* _GameHeap_Allocate)(size_t size);
+extern RelocAddr <_GameHeap_Allocate> GameHeap_Allocate;
+
+typedef ExtraDataList * (* _ExtraDataList_Construct)(void * mem);
+extern RelocAddr <_ExtraDataList_Construct> ExtraDataList_Construct;
+
+// what vanilla SetOwnership uses to give a list new extra data (0x06621210), and to drop it
+typedef void (* _BaseExtraList_Add)(BaseExtraList * list, BSExtraData * data);
+extern RelocAddr <_BaseExtraList_Add> BaseExtraList_Add;
+typedef void (* _BaseExtraList_Remove)(BaseExtraList * list, BSExtraData * data, bool free);
+extern RelocAddr <_BaseExtraList_Remove> BaseExtraList_Remove;
+
+// What the game does with the reference it runs an item's script on (0x06647F90): CopyFrom gives a
+// list copies of another's extra data, after freeing its own, and RemoveAll takes its extra data
+// away, freeing it. Both leave the kinds a reference keeps for itself (its 3D, its havok, ...). A
+// copied ExtraScript shares the item's locals, so the game sets the copy's to none before either.
+typedef void (* _BaseExtraList_CopyFrom)(BaseExtraList * list, const BaseExtraList * src);
+extern RelocAddr <_BaseExtraList_CopyFrom> BaseExtraList_CopyFrom;
+typedef void (* _BaseExtraList_RemoveAll)(BaseExtraList * list, bool free);
+extern RelocAddr <_BaseExtraList_RemoveAll> BaseExtraList_RemoveAll;
+typedef void (* _BaseExtraList_SetScriptLocals)(BaseExtraList * list, ScriptLocals * locals);
+extern RelocAddr <_BaseExtraList_SetScriptLocals> BaseExtraList_SetScriptLocals;

@@ -76,13 +76,13 @@ void ImportConsoleCommand(const char * name)
 static bool Cmd_GetOBSEVersion_Execute(COMMAND_ARGS)
 {
 	// the classic OBSE version we are pretending to be
-	*result = OBSE_VERSION_IMPL_INTEGER;
+	*result = OBSE_VERSION_CLASSIC_REPORTED;
 
 	if(IsConsoleMode())
 	{
 		Console_Print("OBSE64 version: %d.%d.%d, release idx %d, runtime %08X, reported version %d",
 			OBSE_VERSION_INTEGER, OBSE_VERSION_INTEGER_MINOR, OBSE_VERSION_INTEGER_BETA,
-			OBSE_VERSION_RELEASEIDX, RUNTIME_VERSION, OBSE_VERSION_IMPL_INTEGER);
+			OBSE_VERSION_RELEASEIDX, RUNTIME_VERSION, OBSE_VERSION_CLASSIC_REPORTED);
 	}
 
 	return true;
@@ -182,4 +182,6 @@ void AddScriptCommands()
 	ImportConsoleCommand("WaterReflectionColor");
 	ImportConsoleCommand("SetGamma");
 	ImportConsoleCommand("SetHDRParam");
+
+	AddClassicCommands();
 }
