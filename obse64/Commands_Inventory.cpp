@@ -699,7 +699,8 @@ static float GetHealthOf(BaseExtraList * list, TESForm * item)
 }
 
 // As classic: back at full, the item loses its ExtraHealth; any other value is kept, above full
-// too. A list isn't given an ExtraHealth for an item without a health component.
+// too. A list isn't given an ExtraHealth for an item without a health component. True if the
+// list changed, so not for full health on an item already at full.
 static bool SetHealthOf(BaseExtraList * list, TESForm * item, float health)
 {
 	if(!list || !DYNAMIC_CAST(item, TESForm, TESHealthForm)) return false;
@@ -707,8 +708,9 @@ static bool SetHealthOf(BaseExtraList * list, TESForm * item, float health)
 	auto * xHealth = list->Get<ExtraHealth>();
 	if(health == float(GetFullHealth(item)))
 	{
-		if(xHealth)
-			BaseExtraList_Remove(list, xHealth, true);
+		if(!xHealth) return false;
+
+		BaseExtraList_Remove(list, xHealth, true);
 	}
 	else if(xHealth)
 		xHealth->health = health;
@@ -845,12 +847,14 @@ static bool Cmd_SetCurrentHealth_Execute(COMMAND_ARGS)
 	bool isInventoryRef = IsInventoryRef(thisObj);
 	BaseExtraList * list = isInventoryRef ? GetInventoryRefList(thisObj, false) : &thisObj->extraList;
 
-	// a stack of items without extra data of their own needs a list only for a health below or
-	// above full
+	// a stack of items without extra data of their own is at full, and needs a list only for a
+	// health below or above it
 	if(!list && health != float(GetFullHealth(item)))
 		list = GetInventoryRefList(thisObj, true);
 
-	if(!list || SetHealthOf(list, item, health))
+	// 1 if the item's health changed, as SetCurrentCharge gives 1 if its charge did (classic's
+	// SetCurrentHealth gave 0 either way)
+	if(SetHealthOf(list, item, health))
 	{
 		*result = 1;
 		if(isInventoryRef)
