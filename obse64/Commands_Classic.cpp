@@ -2853,7 +2853,12 @@ static bool Cmd_ClassicStub_Execute(COMMAND_ARGS)
 		u32 scriptID = script ? reinterpret_cast <TESForm *>(script)->refID : 0;
 
 		_MESSAGE("classic command %s (%04X) called by script %08X is not implemented yet", name, opcode, scriptID);
-		Console_Print("xOBSE64: %s is not implemented yet (script %08X)", name, scriptID);
+
+		// shown however the script runs (Console_Print drops lines outside a typed command), and
+		// logged above already
+		char line[256];
+		snprintf(line, sizeof(line), "xOBSE64: %s is not implemented yet (script %08X)", name, scriptID);
+		ScriptConsolePrint(line, false);
 	}
 
 	return false;

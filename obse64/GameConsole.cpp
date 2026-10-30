@@ -17,7 +17,7 @@ bool IsConsoleMode()
 	return *g_bConsoleMode;
 }
 
-void ScriptConsolePrint(const char * text)
+void ScriptConsolePrint(const char * text, bool copyToLog)
 {
 	static int s_logPrints = -1;
 	if(s_logPrints < 0)
@@ -49,7 +49,7 @@ void ScriptConsolePrint(const char * text)
 	*g_bConsoleOutputEnabled = outputEnabled;
 
 	// written out at once, so the lines before a crash aren't lost with it
-	if(s_logPrints)
+	if(s_logPrints && copyToLog)
 	{
 		_MESSAGE("console: %s", text);
 		DebugLog::flush();

@@ -22,6 +22,7 @@ extern RelocPtr <u8> g_bConsoleMode;
 extern RelocPtr <u8> g_bConsoleOutputEnabled;
 
 // Prints a line from a script command to the console, turning on the console output the game
-// otherwise allows only while a typed command runs, and copies the line to obse64.txt.
-// [Debug] LogScriptPrints=0 in obse.ini turns the copy off.
-void ScriptConsolePrint(const char * text);
+// otherwise allows only while a typed command runs, and copies the line to obse64.txt unless
+// copyToLog is false (for a line the caller logs its own way). [Debug] LogScriptPrints=0 in
+// obse.ini turns the copy off.
+void ScriptConsolePrint(const char * text, bool copyToLog = true);
