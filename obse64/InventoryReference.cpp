@@ -43,6 +43,35 @@ static s32 GetBaseCount(TESObjectREFR * container, TESForm * item)
 	return count;
 }
 
+// The container's entry for an item, or, for an item only its base container holds, a new one, as
+// the game's quick key marking makes one for such an item (0x06649070): put first in the
+// container's entries, with no change to the base container's count and no lists yet. None for a
+// container without inventory changes, which the game makes only once its inventory changes.
+static ExtraContainerChanges::Entry * FindOrAddEntry(TESObjectREFR * container, TESForm * item)
+{
+	auto * changes = container->extraList.Get<ExtraContainerChanges>();
+	auto * objList = changes ? changes->GetObjList() : nullptr;
+	if(!objList) return nullptr;
+
+	for(auto * node = &objList->node; node; node = node->m_next)
+	{
+		if(node->m_data && node->m_data->type == item)
+			return node->m_data;
+	}
+
+	auto * entry = static_cast <ExtraContainerChanges::Entry *>(GameHeap_Allocate(sizeof(ExtraContainerChanges::Entry)));
+	if(!entry) return nullptr;
+
+	entry->extraData = nullptr;
+	entry->countDelta = 0;
+	entry->pad0C = 0;
+	entry->type = item;
+
+	BSSimpleList_AddFirst(objList, entry);
+
+	return entry;
+}
+
 // how many of an entry's items have no extra data list of their own
 static s32 GetUnlistedCount(TESObjectREFR * container, ExtraContainerChanges::Entry * entry)
 {
@@ -240,10 +269,14 @@ ExtraDataList * GetInventoryRefList(TESObjectREFR * ref, bool create)
 	InventoryStack & stack = found->second;
 	if(!stack.item || !IsInventoryStackValid(stack)) return nullptr;
 
-	// only the base container's items have no entry to give a list to
-	if(stack.list || !create || !stack.entry) return stack.list;
+	if(stack.list || !create) return stack.list;
 
 	BaseExtraList::Locker lock;
+
+	// items only the base container holds are given an entry first, which the list then goes in
+	if(!stack.entry)
+		stack.entry = FindOrAddEntry(stack.container, stack.item);
+	if(!stack.entry) return nullptr;
 
 	// the items the new list is for, counted now: the script may have added or removed some since
 	// its loop came to the stack, and a list mustn't claim more than the entry has

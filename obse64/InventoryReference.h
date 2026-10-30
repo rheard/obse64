@@ -11,7 +11,7 @@ class TESObjectREFR;
 // it. It's made with the game's own constructor, which gives it a form ID scripts can look it up
 // by, and is given the stack's item and a copy of its extra data, as the reference the game runs an
 // item's script on is (0x06647F90). Unlike classic, the copy isn't written back to the stack: a
-// command changes the stack itself where it knows to (the charge commands do).
+// command changes the stack itself where it knows to (the charge and health commands do).
 
 // one stack of items in a container: the items of an entry sharing an extra data list, or those
 // with none of their own
@@ -42,8 +42,9 @@ void DestroyInventoryRef(TESObjectREFR * ref);
 bool IsInventoryRef(TESObjectREFR * ref);
 
 // The extra data list of the stack an inventory reference stands for, while the stack is still in
-// its container. With create, a stack of items without one of their own is given one (when it's in
-// the container's changes), which all of them then share.
+// its container. With create, a stack of items without one of their own is given one, which all
+// of them then share; an item only the base container holds is first given an entry in the
+// container's changes, which a container has once its inventory has changed at all.
 ExtraDataList * GetInventoryRefList(TESObjectREFR * ref, bool create);
 
 // gives an inventory reference a new copy of its stack's extra data, after a command changed it
