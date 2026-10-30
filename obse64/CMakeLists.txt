@@ -170,6 +170,7 @@ add_library(
 	obse64.def
 	obse64_version.rc
 	GameRTTI.inl
+	ClassicCommandTable.inl
 )
 
 add_library(obse64::${PROJECT_NAME} ALIAS ${PROJECT_NAME})

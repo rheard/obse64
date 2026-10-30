@@ -90,3 +90,7 @@ private:
 
 	std::vector <Value>	m_args;
 };
+
+// the parse handler of commands whose arguments classic OBSE compiles with its own expression
+// compiler, which isn't ported: they run in compiled scripts but can't be typed in the console
+bool Cmd_Expression_Parse(u32 numParams, const ParamInfo * paramInfo, ScriptLineBuffer * lineBuf, ScriptBuffer * scriptBuf);

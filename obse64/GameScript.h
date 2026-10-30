@@ -2,6 +2,7 @@
 
 #include "obse64_common/Relocation.h"
 #include "obse64_common/Utilities.h"
+#include <cstddef>
 
 class TESForm;
 class TESObjectREFR;
@@ -189,3 +190,25 @@ enum
 
 extern RelocPtr <CommandInfo>	g_firstScriptCommand;
 extern RelocPtr <CommandInfo>	g_firstConsoleCommand;
+
+// The game's script runner (0xC0 bytes, built by 0x0694C7C0). ScriptRunner::Run (0x0694D6D0) steps
+// through a script's statements and has 0x0694C810 run each one. The runner keeps the if/else
+// nesting: a depth, and for each level 1 while inside an if and 2 once one of its branches ran.
+// Nothing bounds the depth: an If past the tenth level writes past ifStack.
+struct ScriptRunner
+{
+	TESObjectREFR	* containingObj;	// 00
+	u64				unk08;				// 08
+	ScriptLocals	* locals;			// 10 the locals the script runs with, which its commands are given
+	u8				unk18[0x10];		// 18
+	Script			* script;			// 28 the script running, 0 when idle
+	u32				unk30;				// 30
+	u32				unk34;				// 34
+	s32				ifDepth;			// 38
+	u32				ifStack[10];		// 3C
+};
+
+static_assert(offsetof(ScriptRunner, locals) == 0x10);
+static_assert(offsetof(ScriptRunner, script) == 0x28);
+static_assert(offsetof(ScriptRunner, ifDepth) == 0x38);
+static_assert(offsetof(ScriptRunner, ifStack) == 0x3C);

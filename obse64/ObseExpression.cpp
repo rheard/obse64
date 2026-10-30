@@ -1,4 +1,5 @@
 #include "ObseExpression.h"
+#include "GameConsole.h"
 #include "GameForms.h"
 #include "GameObjects.h"
 #include "GameRTTI.h"
@@ -538,4 +539,10 @@ bool ObseExpression::ReadGameNumber(const u8 * code, double * out)
 {
 	u32 offset = 0;
 	return ExtractNumericArg(out, (const char *)code, &offset, m_thisObj, m_containingObj, m_script, m_locals, true);
+}
+
+bool Cmd_Expression_Parse(u32 numParams, const ParamInfo * paramInfo, ScriptLineBuffer * lineBuf, ScriptBuffer * scriptBuf)
+{
+	Console_Print("xOBSE64 can't compile OBSE expressions yet, so this command only works in compiled scripts");
+	return false;
 }
