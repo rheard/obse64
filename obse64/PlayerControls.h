@@ -8,8 +8,9 @@
 // handles itself, on its game thread. These are called on the Oblivion thread.
 
 // Whether one of the controls Unreal handles itself is down; false if the control isn't one. A way
-// to move is down while its key is held, disabled or not, as classic read the key itself, and Run
-// while sprinting.
+// to move is down while its key is held, disabled or not, as classic read the key itself; Run while
+// sprinting; and Always Run, whose toggle Unreal sends only as it's pressed, for the pass of the
+// Oblivion loop after each press.
 bool PlayerControls_GetDown(u32 control, bool * down);
 
 // stops the player using a control, or lets them again; false if that isn't possible for it
@@ -24,5 +25,9 @@ bool PlayerControls_GetRunning(bool * running);
 
 // does what was asked of Unreal, once each Unreal frame, on its game thread
 void PlayerControls_Update();
+
+// once each pass of the Oblivion thread's main loop, before its scripts: takes in the presses
+// since the last pass
+void PlayerControls_BeginOblivionFrame();
 
 void PlayerControls_Install();

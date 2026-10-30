@@ -10,10 +10,10 @@
 // VEnhancedAltarPlayerController), called through their exec thunks: a pressed and a released
 // handler for each way to move, which set how far the player moves that way, and toggles for
 // sprinting and walking. The thunks' calls to the handlers go through hooks here, which skip the
-// pressed handler or toggle of a disabled control, and note which ways to move are held, whether
-// disabled or not, as classic's IsControlPressed read the key itself. Once each Unreal frame, the
-// controller is found as UGameplayStatics::GetPlayerController finds it, what's down is published
-// for the Oblivion thread, and taps asked for there are made.
+// pressed handler or toggle of a disabled control, and note which ways to move are held and when
+// the walk toggle is pressed, whether disabled or not, as classic's IsControlPressed read the key
+// itself. Once each Unreal frame, the controller is found as UGameplayStatics::GetPlayerController
+// finds it, what's down is published for the Oblivion thread, and taps asked for there are made.
 
 enum
 {
@@ -85,7 +85,10 @@ static std::atomic <u32>	s_down = 0;		// controls down, as bits, for the Oblivio
 static std::atomic <u32>	s_disabled = 0;	// controls disabled, as bits
 static std::atomic <u32>	s_held = 0;		// ways to move pressed and not yet released, disabled or not
 static std::atomic <u32>	s_walkTaps = 0;	// Always Run taps asked for
+static std::atomic <u32>	s_walkPresses = 0;	// Always Run presses since the Oblivion thread last looked
 static std::atomic <u32>	s_running = kRunning_Unknown;	// whether the player is set to run
+
+static bool	s_walkDown = false;	// Oblivion thread only: Always Run was pressed for this pass of its loop
 
 static uintptr_t Address(uintptr_t rva)
 {
@@ -145,8 +148,12 @@ static void ToggleSprint_Hook(UObject * controller, const double * value)
 	ToggleSprint(controller, value);
 }
 
+// The walk toggle is pressed and done: Unreal sends nothing as it's let go. So a press is counted,
+// for Always Run to read down for one pass of the Oblivion loop, disabled or not.
 static void ToggleWalk_Hook(UObject * controller, const double * value)
 {
+	s_walkPresses++;
+
 	if(s_disabled & (1 << kControl_AlwaysRun)) return;
 
 	ToggleWalk(controller, value);
@@ -168,9 +175,17 @@ bool PlayerControls_GetDown(u32 control, bool * down)
 {
 	if(control >= 32 || !(kHandledControls & (1 << control))) return false;
 
-	*down = (s_down & (1 << control)) != 0;
+	if(control == kControl_AlwaysRun)
+		*down = s_walkDown;
+	else
+		*down = (s_down & (1 << control)) != 0;
 
 	return true;
+}
+
+void PlayerControls_BeginOblivionFrame()
+{
+	s_walkDown = s_walkPresses.exchange(0) != 0;
 }
 
 bool PlayerControls_SetDisabled(u32 control, bool disabled)
@@ -221,6 +236,7 @@ void PlayerControls_Update()
 	{
 		s_down = 0;
 		s_walkTaps = 0;
+		s_walkPresses = 0;
 		s_running = kRunning_Unknown;
 		return;
 	}
