@@ -7,7 +7,9 @@
 // 3), sprinting (classic's Run, 10) and the walk/run toggle (classic's Always Run, 11), Unreal
 // handles itself, on its game thread. These are called on the Oblivion thread.
 
-// whether one of the controls Unreal handles itself is down; false if the control isn't one
+// Whether one of the controls Unreal handles itself is down; false if the control isn't one. A way
+// to move is down while its key is held, disabled or not, as classic read the key itself, and Run
+// while sprinting.
 bool PlayerControls_GetDown(u32 control, bool * down);
 
 // stops the player using a control, or lets them again; false if that isn't possible for it

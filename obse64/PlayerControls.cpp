@@ -9,10 +9,11 @@
 // Unreal binds each of these controls to UFunctions on the player controller (Altar's
 // VEnhancedAltarPlayerController), called through their exec thunks: a pressed and a released
 // handler for each way to move, which set how far the player moves that way, and toggles for
-// sprinting and walking. The thunks' calls to the pressed handlers and the toggles go through hooks
-// here, which skip the handler for a disabled control. Once each Unreal frame, the controller is
-// found as UGameplayStatics::GetPlayerController finds it, what's down is published for the
-// Oblivion thread, and taps asked for there are made.
+// sprinting and walking. The thunks' calls to the handlers go through hooks here, which skip the
+// pressed handler or toggle of a disabled control, and note which ways to move are held, whether
+// disabled or not, as classic's IsControlPressed read the key itself. Once each Unreal frame, the
+// controller is found as UGameplayStatics::GetPlayerController finds it, what's down is published
+// for the Oblivion thread, and taps asked for there are made.
 
 enum
 {
@@ -52,20 +53,26 @@ static RelocPtr <UClass *> g_altarPlayerControllerClass(0x092E1708);
 
 typedef void (* _InputHandler)(UObject * controller, const double * value);
 
-// each way to move, in classic's order: the exec thunk's call to its pressed handler, and the handler
+// each way to move, in classic's order: the exec thunk's call to its pressed handler, and the
+// handler, and the released thunk's jump to its handler (its last instruction), and the handler
 struct MovementHandler
 {
 	uintptr_t	pressedCall;
 	uintptr_t	pressed;
+	uintptr_t	releasedJump;
+	uintptr_t	released;
 };
 
 static const MovementHandler kMovementHandlers[4] =
 {
-	{ 0x04640C68, 0x0488AC80 },	// MovementForwardInput_Pressed
-	{ 0x04640B98, 0x0488AB80 },	// MovementBackwardInput_Pressed
-	{ 0x04640D38, 0x0488AD70 },	// MovementLeftInput_Pressed
-	{ 0x04640E08, 0x0488AE70 },	// MovementRightInput_Pressed
+	{ 0x04640C68, 0x0488AC80, 0x04640C95, 0x0488AD60 },	// MovementForwardInput_Pressed, _Released
+	{ 0x04640B98, 0x0488AB80, 0x04640BC5, 0x0488AC70 },	// MovementBackwardInput_
+	{ 0x04640D38, 0x0488AD70, 0x04640D65, 0x0488AE60 },	// MovementLeftInput_
+	{ 0x04640E08, 0x0488AE70, 0x04640E35, 0x0488AF50 },	// MovementRightInput_
 };
+
+static const u32 kMovementControls = (1 << kControl_Forward) | (1 << kControl_Back) | (1 << kControl_SlideLeft) |
+	(1 << kControl_SlideRight);
 
 // the sprint toggle (classic's Run) and the walk toggle (Always Run), and their thunks' calls; the
 // walk toggle does nothing while the game is set to take both controls from Unreal itself
@@ -76,6 +83,7 @@ static RelocAddr <uintptr_t> kToggleWalk_Call(0x04641B18);
 
 static std::atomic <u32>	s_down = 0;		// controls down, as bits, for the Oblivion thread
 static std::atomic <u32>	s_disabled = 0;	// controls disabled, as bits
+static std::atomic <u32>	s_held = 0;		// ways to move pressed and not yet released, disabled or not
 static std::atomic <u32>	s_walkTaps = 0;	// Always Run taps asked for
 static std::atomic <u32>	s_running = kRunning_Unknown;	// whether the player is set to run
 
@@ -113,8 +121,19 @@ static u8 * GetPlayerController()
 template <u32 kControl>
 static void MovementPressed_Hook(UObject * controller, const double * value)
 {
+	s_held |= 1 << kControl;
+
 	if(!(s_disabled & (1 << kControl)))
 		reinterpret_cast <_InputHandler>(Address(kMovementHandlers[kControl].pressed))(controller, value);
+}
+
+// entered by the released thunk's jump, so it returns to the thunk's caller
+template <u32 kControl>
+static void MovementReleased_Hook(UObject * controller, const double * value)
+{
+	s_held &= ~(1 << kControl);
+
+	reinterpret_cast <_InputHandler>(Address(kMovementHandlers[kControl].released))(controller, value);
 }
 
 static void ToggleSprint_Hook(UObject * controller, const double * value)
@@ -137,6 +156,12 @@ static const _InputHandler kPressedHooks[4] =
 {
 	MovementPressed_Hook <kControl_Forward>, MovementPressed_Hook <kControl_Back>,
 	MovementPressed_Hook <kControl_SlideLeft>, MovementPressed_Hook <kControl_SlideRight>,
+};
+
+static const _InputHandler kReleasedHooks[4] =
+{
+	MovementReleased_Hook <kControl_Forward>, MovementReleased_Hook <kControl_Back>,
+	MovementReleased_Hook <kControl_SlideLeft>, MovementReleased_Hook <kControl_SlideRight>,
 };
 
 bool PlayerControls_GetDown(u32 control, bool * down)
@@ -181,7 +206,17 @@ bool PlayerControls_Tap(u32 control)
 
 void PlayerControls_Update()
 {
+	// A new controller (fast travel makes one) hasn't seen the old one's presses, nor will it send
+	// their releases. With no controller, nothing is down.
+	static u8 * s_controller = nullptr;
+
 	u8 * controller = GetPlayerController();
+	if(controller != s_controller)
+	{
+		s_controller = controller;
+		s_held = 0;
+	}
+
 	if(!controller)
 	{
 		s_down = 0;
@@ -191,7 +226,10 @@ void PlayerControls_Update()
 	}
 
 	u32 disabled = s_disabled;
-	u32 down = 0;
+
+	// a disabled way to move is down while its key is held, as classic read a disabled key's own
+	// state for IsControlPressed
+	u32 down = s_held & disabled & kMovementControls;
 
 	for(u32 control = kControl_Forward; control <= kControl_SlideRight; control++)
 	{
@@ -224,7 +262,10 @@ void PlayerControls_Install()
 		IsCallTo(kToggleWalk_Call.getUIntPtr(), ToggleWalk.getUIntPtr());
 
 	for(const auto & handler : kMovementHandlers)
-		found = found && IsCallTo(Address(handler.pressedCall), Address(handler.pressed));
+	{
+		found = found && IsCallTo(Address(handler.pressedCall), Address(handler.pressed)) &&
+			IsJumpTo(Address(handler.releasedJump), Address(handler.released));
+	}
 
 	if(!found)
 	{
@@ -236,5 +277,8 @@ void PlayerControls_Install()
 	g_branchTrampoline.write5Call(kToggleWalk_Call.getUIntPtr(), uintptr_t(ToggleWalk_Hook));
 
 	for(u32 i = 0; i < 4; i++)
+	{
 		g_branchTrampoline.write5Call(Address(kMovementHandlers[i].pressedCall), uintptr_t(kPressedHooks[i]));
+		g_branchTrampoline.write5Branch(Address(kMovementHandlers[i].releasedJump), uintptr_t(kReleasedHooks[i]));
+	}
 }

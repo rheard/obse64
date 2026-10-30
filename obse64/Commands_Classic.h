@@ -74,3 +74,9 @@ inline bool IsCallTo(uintptr_t src, uintptr_t dst)
 {
 	return *(const u8 *)src == 0xE8 && src + 5 + *(const s32 *)(src + 1) == dst;
 }
+
+// a jump at src to the function at dst, as the game was built (a call in a function's tail)
+inline bool IsJumpTo(uintptr_t src, uintptr_t dst)
+{
+	return *(const u8 *)src == 0xE9 && src + 5 + *(const s32 *)(src + 1) == dst;
+}
