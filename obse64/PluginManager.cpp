@@ -676,6 +676,7 @@ void PluginManager::updateAddressLibraryPrompt()
 	if(result == IDYES)
 	{
 		ShellExecute(0, nullptr, "https://www.nexusmods.com/oblivionremastered/mods/4475", nullptr, nullptr, 0);
+		DebugLog::flush();
 		TerminateProcess(GetCurrentProcess(), 0);
 	}
 }
