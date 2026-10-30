@@ -541,10 +541,13 @@ const char * PluginManager::checkPluginCompatibility(const OBSEPluginVersionData
 			}
 		}
 
-		// SE version compatibility
+		// SE version compatibility, against the OBSE64 whose plugin interface xOBSE64 has
 		if(version.seVersionRequired > PACKED_OBSE_VERSION)
 		{
-			return "disabled, requires newer script extender";
+			return "disabled, requires a newer OBSE64 than the "
+				__PREPRO_TOKEN_STR__(OBSE_VERSION_INTEGER) "."
+				__PREPRO_TOKEN_STR__(OBSE_VERSION_INTEGER_MINOR) "."
+				__PREPRO_TOKEN_STR__(OBSE_VERSION_INTEGER_BETA) " xOBSE64 is based on";
 		}
 	}
 	__except(EXCEPTION_EXECUTE_HANDLER)
