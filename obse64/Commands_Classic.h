@@ -54,6 +54,10 @@ static_assert(offsetof(ScriptRunner, script) == 0x28);
 static_assert(offsetof(ScriptRunner, ifDepth) == 0x38);
 static_assert(offsetof(ScriptRunner, ifStack) == 0x3C);
 
+// whether a command was called as a statement of its own, by any runner, rather than from an
+// expression; returnAddress is the command's _ReturnAddress()
+bool IsStatementCall(void * returnAddress);
+
 // The runner running this statement, and Run's length for it, which the command can change to
 // jump: the next statement is at argsOffset + *length (Commands_Classic.cpp, with Goto). False
 // unless the command is a statement of its own run by the main runner: not part of an expression,

@@ -11,16 +11,6 @@
 
 CommandInfo * GetCommandInfo(u32 opcode);	// Hooks_Script.cpp
 
-// classic OBSE's variable types, as compiled into 'V' tokens
-enum
-{
-	kVarType_Float =	0,
-	kVarType_Integer =	1,
-	kVarType_String =	2,
-	kVarType_Array =	3,
-	kVarType_Ref =		4,
-};
-
 // classic OBSE's operators, compiled as their number in its OperatorType
 enum
 {
@@ -263,10 +253,10 @@ bool ObseExpression::ReadToken(const u8 * end, std::vector <Value> * stack)
 			u16 refIdx, varIdx;
 			if(!Read(&varType) || !Read(&refIdx) || !Read(&varIdx)) return false;
 
-			if(varType != kVarType_Float && varType != kVarType_Integer && varType != kVarType_Ref)
+			// a string variable is an integer variable, and gives its string's ID as one does
+			if(varType != kVarType_Float && varType != kVarType_Integer && varType != kVarType_String && varType != kVarType_Ref)
 			{
-				Fail("%s variables are not supported yet",
-					varType == kVarType_String ? "string" : (varType == kVarType_Array ? "array" : "unknown"));
+				Fail("%s variables are not supported yet", varType == kVarType_Array ? "array" : "unknown");
 				return false;
 			}
 

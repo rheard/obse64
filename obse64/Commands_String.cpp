@@ -1,11 +1,14 @@
 #include "Commands_Classic.h"
 #include "CommandTable.h"
+#include "FunctionScripts.h"
 #include "GameConsole.h"
 #include "GameForms.h"
+#include "ObseExpression.h"
 #include "ParamInfos.h"
 #include "obse64_common/BranchTrampoline.h"
 #include "obse64_common/Log.h"
 #include <ctime>
+#include <intrin.h>
 #include <map>
 #include <string>
 
@@ -43,6 +46,11 @@ public:
 		m_strings[id];
 
 		return id;
+	}
+
+	void Remove(u32 id)
+	{
+		m_strings.erase(id);
 	}
 
 private:
@@ -256,6 +264,42 @@ static bool Cmd_sv_SubString_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// Frees strings, as classic's did: as the value of a set statement, the one its variable holds
+// ("set s to sv_Destruct", which leaves s 0), and as a statement of its own, the ones the string
+// variables it's given hold ("sv_Destruct s1 s2", up to ten), setting this script's own to 0.
+// Classic's docs tell scripts to free a string they need only for a while this way, a function's
+// above all: its variables are 0 again at each call, so each string it makes is a new one.
+static bool Cmd_sv_Destruct_Execute(COMMAND_ARGS)
+{
+	void * returnAddress = _ReturnAddress();
+
+	*result = 0;
+
+	double current = 0;
+	if(!IsStatementCall(returnAddress) && GetSetStatementVariable(thisObj, containingObj, script, locals, &current))
+	{
+		s_stringVars.Remove(StringIDFromValue(current));
+		return true;
+	}
+
+	ObseExpression eval(PASS_COMMAND_ARGS);
+	if(!eval.ExtractArgs()) return true;
+
+	for(u32 i = 0; i < eval.NumArgs(); i++)
+	{
+		const auto & arg = eval.Arg(i);
+		if(arg.varType != ObseExpression::kVarType_String) continue;
+
+		s_stringVars.Remove(StringIDFromValue(arg.number));
+
+		// a quest's or a reference's variable keeps its number, which no longer names a string
+		if(arg.isLocalVar)
+			SetScriptVariable(locals, arg.varIdx, 0);
+	}
+
+	return true;
+}
+
 static ParamInfo kParams_SubString[3] =
 {
 	{	"stringVar",	kParamType_Integer,	0 },
@@ -301,4 +345,15 @@ CommandInfo kCommandInfo_sv_SubString =
 	0,
 	3, kParams_SubString,
 	Cmd_sv_SubString_Execute
+};
+
+CommandInfo kCommandInfo_sv_Destruct =
+{
+	"sv_Destruct", "",
+	0,
+	"destroys one or more string variables",
+	0,
+	0, nullptr,
+	Cmd_sv_Destruct_Execute,
+	Cmd_Expression_Parse
 };

@@ -7,12 +7,22 @@
 // A first slice of classic OBSE's expression evaluator. Classic OBSE compiles the arguments of
 // commands such as TestExpr, PrintD and let in its own format: an argument count, then for
 // each argument a length and a postfix token stream. This evaluates numbers, strings, forms,
-// globals, number and ref variables, command calls, the pair operator (key::value) and ForEach's
-// (iterator <- container); other operators and string or array variables are reported as
-// unsupported and fail the argument.
+// globals, number, ref and string variables (a string variable gives its string's ID, as a
+// number), command calls, the pair operator (key::value) and ForEach's (iterator <- container);
+// other operators and array variables are reported as unsupported and fail the argument.
 class ObseExpression
 {
 public:
+	// classic OBSE's variable types, as its compiler writes them in a variable's token
+	enum VarType
+	{
+		kVarType_Float =	0,
+		kVarType_Integer =	1,
+		kVarType_String =	2,	// an integer variable holding the string's ID
+		kVarType_Array =	3,
+		kVarType_Ref =		4,
+	};
+
 	struct Value
 	{
 		enum Type

@@ -618,6 +618,7 @@ extern CommandInfo kCommandInfo_sv_Construct;
 extern CommandInfo kCommandInfo_sv_Set;
 extern CommandInfo kCommandInfo_sv_Length;
 extern CommandInfo kCommandInfo_sv_SubString;
+extern CommandInfo kCommandInfo_sv_Destruct;
 
 // in Commands_Events.cpp, with the handlers they keep
 extern CommandInfo kCommandInfo_SetEventHandler;
@@ -2413,10 +2414,15 @@ struct SavedIP
 
 static std::map <std::pair <Script *, u32>, SavedIP> s_savedIPs;
 
+bool IsStatementCall(void * returnAddress)
+{
+	return uintptr_t(returnAddress) == kStatementCommandReturn.getUIntPtr();
+}
+
 bool GetStatementState(void * returnAddress, Script * script, const char * scriptData, u32 argsOffset,
 	u32 * opcodeOffsetPtr, ScriptRunner ** runner, s32 ** length)
 {
-	if(uintptr_t(returnAddress) != kStatementCommandReturn.getUIntPtr()) return false;
+	if(!IsStatementCall(returnAddress)) return false;
 
 	*runner = *g_scriptRunner;
 	if(!*runner || (*runner)->script != script) return false;
@@ -2792,6 +2798,7 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_sv_Set,			kRetnType_Default },
 	{ &kCommandInfo_sv_Length,		kRetnType_Default },
 	{ &kCommandInfo_sv_SubString,	kRetnType_String },
+	{ &kCommandInfo_sv_Destruct,	kRetnType_Default },
 	{ &kCommandInfo_GetRider,		kRetnType_Form },
 	{ &kCommandInfo_GetGameRestarted,	kRetnType_Default },
 	{ &kCommandInfo_FileExists,		kRetnType_Default },
