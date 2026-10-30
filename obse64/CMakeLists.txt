@@ -52,6 +52,8 @@ source_group(
 	FILES
 		GameConsole.cpp
 		GameConsole.h
+		GameMenus.cpp
+		GameMenus.h
 		GameScript.cpp
 		GameScript.h
 		GameData.cpp

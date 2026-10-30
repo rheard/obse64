@@ -5,6 +5,7 @@
 #include "GameConsole.h"
 #include "GameExtraData.h"
 #include "GameForms.h"
+#include "GameMenus.h"
 #include "GameObjects.h"
 #include "GameRTTI.h"
 #include "GameScript.h"
@@ -63,7 +64,6 @@ static bool Cmd_GetBaseObject_Execute(COMMAND_ARGS)
 // the player's line of sight and hands the hit over (0x0655A460); the setter (0x065D6950) stores
 // it there while it's within reach and clears it otherwise, and the player's own activation reads
 // it from there (0x065694B0). Classic read HUDInfoMenu::crosshairRef, which stays empty here.
-static RelocPtr <u8 *> g_interfaceManager(0x0941F808);
 
 static bool Cmd_GetCrosshairRef_Execute(COMMAND_ARGS)
 {
@@ -952,23 +952,10 @@ static void InstallIsRunning()
 
 enum
 {
-	kMenuType_Magic =	1022,
-
 	// classic's tile values for a menu list's items: what kind of item, and its index
 	kTileValue_user7 =	0xFB5,
 	kTileValue_user13 =	0xFBB,
 };
-
-// The open menus' tiles, by menu type (classic's g_TileMenuArray); a tile menu's Menu is at +0x88,
-// and Menu's destructor (0x066F84F0) clears both.
-typedef u8 * (* _GetTileMenuByType)(u32 menuType);
-static RelocAddr <_GetTileMenuByType> GetTileMenuByType(0x066F1F80);
-
-static u8 * GetMenuByType(u32 menuType)
-{
-	u8 * tileMenu = GetTileMenuByType(menuType);
-	return tileMenu ? *(u8 **)(tileMenu + 0x88) : nullptr;
-}
 
 // The magic menu is still classic's MagicMenu under Unreal's. Unreal's handlers for hovering or
 // clicking an item (0x0656F470, 0x0656F3B0) call 0x06774440 with the menu and the item's index,
@@ -992,9 +979,6 @@ static RelocAddr <uintptr_t> kMagicMenu_ConstructCall(0x065DD337);
 
 typedef u8 * (* _MagicMenu_GetItemTile)(u8 * menu, s32 index);
 static RelocAddr <_MagicMenu_GetItemTile> MagicMenu_GetItemTile(0x06774A40);
-
-typedef float (* _Tile_GetFloat)(u8 * tile, u32 valueID);
-static RelocAddr <_Tile_GetFloat> Tile_GetFloat(0x066F1EE0);
 
 struct MagicMenuListNode
 {
@@ -1220,18 +1204,12 @@ static bool Cmd_GetGameRestarted_Execute(COMMAND_ARGS)
 // QueueUIMessage_2, 0x0656C3E0), called from 0x067DD888, and RemoveItem what was removed with the
 // same, from its own handler at 0x06A15F8B. AddItemNS and RemoveItemNS run the game's command with
 // that message skipped, as classic did by making the message functions return at once.
-typedef bool (* _QueueUIMessageWithIcon)(void * message, float duration, const char * icon, void * sound, u8 unk);
-static RelocAddr <_QueueUIMessageWithIcon> QueueUIMessageWithIcon(0x0656C3E0);
 static RelocAddr <uintptr_t> kAddItem_MessageCall(0x067DD888);
 static RelocAddr <uintptr_t> kRemoveItem_MessageCall(0x06A15F8B);
 
 // EquipItem and UnequipItem tell the player what was equipped with the game's plain message, a
 // notification (classic's QueueUIMessage, 0x0656C6B0), called from 0x06A09E6D and 0x06A20D6F,
 // which EquipItemNS and UnequipItemNS skip the same way.
-struct UIMessage;	// a message for Unreal to show, with MessageEX below
-
-typedef bool (* _QueueUIMessage)(UIMessage * message, void * unk, u32 notification, float duration);
-static RelocAddr <_QueueUIMessage> QueueUIMessage(0x0656C6B0);
 static RelocAddr <uintptr_t> kEquipItem_MessageCall(0x06A09E6D);
 static RelocAddr <uintptr_t> kUnequipItem_MessageCall(0x06A20D6F);
 
@@ -1734,29 +1712,8 @@ static bool Cmd_TestExpr_Execute(COMMAND_ARGS)
 	return true;
 }
 
-// The game's messages for Unreal (0x20 bytes) are a list of parts of 0x38 bytes, each a key and
-// named arguments. Unreal turns each part's key into text, formats its arguments into it
-// (FText::Format: {name}, with ` before a brace that's meant), and joins the parts. A string
-// argument that is a key gets translated there, on Unreal's thread, where its string tables can
-// be read. 0x0655A5A0 adds a part with one string argument,
-// as the game does for a disease's name; 0x04722180 destroys the parts. The game's Message and
-// MessageBox show such a message as a notification (0x0656C6B0) and a message box (0x06568C40).
-struct UIMessage
-{
-	u32		unk00;
-	void	* parts[3];	// begin, end, capacity
-};
-
-typedef void (* _UIMessage_AddPart)(UIMessage * message, const GameStdString * key, const char * argName, const char * argValue);
-static RelocAddr <_UIMessage_AddPart> UIMessage_AddPart(0x0655A5A0);
-
-typedef void (* _UIMessage_DestroyParts)(void ** parts);
-static RelocAddr <_UIMessage_DestroyParts> UIMessage_DestroyParts(0x04722180);
-
-// the message, the callback that records the button pressed, flags, a button of its own (none
-// here), then the buttons, up to an empty one
-typedef bool (* _ShowMessageBox)(UIMessage * message, uintptr_t callback, u32 flags, const char * ownButton, ...);
-static RelocAddr <_ShowMessageBox> ShowMessageBox(0x06568C40);
+// the callback MessageBoxEX gives a message box, which records the button pressed for
+// GetButtonPressed
 static RelocAddr <uintptr_t> kMessageBox_RecordButton(0x06A0DF40);
 
 // what GetButtonPressed reads: the form ID of the script's calling reference (or of the script),
