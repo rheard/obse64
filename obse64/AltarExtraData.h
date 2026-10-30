@@ -19,7 +19,7 @@ static_assert(sizeof(ExtraAltarActorGUID) == 0x28);
 class ExtraAltarBPVariant: public BSExtraData
 {
 public:
-	enum { kID = kExtraData_AltarActorGUID };
+	enum { kID = kExtraData_AltarBPVariant };
 
 	u32	m_variantIdx;	// 18
 	u32	pad1C;			// 1C
