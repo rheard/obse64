@@ -232,8 +232,6 @@ bool ScanEXE(const char * path, ProcHookInfo * hookInfo)
 		if(fileBase)
 		{
 			// scan for packing type
-			bool	isWinStore = IsWinStoreImage(fileBase);
-
 			if(IsUPXImage(fileBase))
 			{
 				hookInfo->procType = kProcType_Packed;
@@ -395,92 +393,4 @@ bool IdentifyEXE(const char * procName, bool isEditor, std::string * dllSuffix, 
 	}
 
 	return result;
-}
-
-bool VersionCheck(const ProcHookInfo & procInfo, u64 RUNTIME_VERSION)
-{
-	const u64 kCurVersion =
-		(u64(GET_EXE_VERSION_MAJOR(RUNTIME_VERSION)) << 48) |
-		(u64(GET_EXE_VERSION_MINOR(RUNTIME_VERSION)) << 32) |
-		(u64(GET_EXE_VERSION_BUILD(RUNTIME_VERSION)) << 16);
-
-	// convert version resource to internal version format
-	u32 versionInternal = MAKE_EXE_VERSION(procInfo.version >> 48, procInfo.version >> 32, procInfo.version >> 16);
-
-	// version mismatch could mean exe type mismatch
-	if(procInfo.version != kCurVersion)
-	{
-#if GET_EXE_VERSION_SUB(RUNTIME_VERSION) == RUNTIME_TYPE_BETHESDA
-		const int expectedProcType = kProcType_Steam;
-		const char * expectedProcTypeName = "Steam";
-#elif GET_EXE_VERSION_SUB(RUNTIME_VERSION) == RUNTIME_TYPE_GOG
-		const int expectedProcType = kProcType_GOG;
-		const char * expectedProcTypeName = "GOG";
-#else
-#error unknown runtime type
-#endif
-
-		// we only care about steam/gog for this check
-		const char * foundProcTypeName = nullptr;
-
-		switch(procInfo.procType)
-		{
-			case kProcType_Steam:
-				foundProcTypeName = "Steam";
-				break;
-
-			case kProcType_GOG:
-				foundProcTypeName = "GOG";
-				break;
-		}
-
-		if(foundProcTypeName && (procInfo.procType != expectedProcType))
-		{
-			// different build
-			PrintLoaderError(
-				"This version of xOBSE64 is compatible with the %s version of the game.\n"
-				"You have the %s version of the game, which xOBSE64 doesn't support.\n"
-				"Runtime: %d.%d.%d\n"
-				"xOBSE64: %s",
-				expectedProcTypeName, foundProcTypeName,
-				GET_EXE_VERSION_MAJOR(versionInternal), GET_EXE_VERSION_MINOR(versionInternal), GET_EXE_VERSION_BUILD(versionInternal),
-				XOBSE64_VERSION_STRING);
-
-			return false;
-		}
-	}
-
-	if(procInfo.version < kCurVersion)
-	{
-#if OBSE_TARGETING_BETA_VERSION
-		if(versionInternal == CURRENT_RELEASE_RUNTIME)
-			PrintLoaderError(
-				"You are using the version of xOBSE64 intended for the Steam beta branch (%s).\n"
-				"Download and install the non-beta branch version from " XOBSE64_RELEASES_URL ".",
-				XOBSE64_VERSION_STRING);
-		else
-			PrintLoaderError(
-				"You are using Oblivion Remastered version %d.%d.%d, which is out of date and incompatible with this version of xOBSE64 (%s). Update to the latest beta version.",
-				GET_EXE_VERSION_MAJOR(versionInternal), GET_EXE_VERSION_MINOR(versionInternal), GET_EXE_VERSION_BUILD(versionInternal),
-				XOBSE64_VERSION_STRING);
-#else
-		PrintLoaderError(
-			"You are using Oblivion Remastered version %d.%d.%d, which is out of date and incompatible with this version of xOBSE64 (%s). Update to the latest version.",
-			GET_EXE_VERSION_MAJOR(versionInternal), GET_EXE_VERSION_MINOR(versionInternal), GET_EXE_VERSION_BUILD(versionInternal),
-			XOBSE64_VERSION_STRING);
-#endif
-	}
-	else if(procInfo.version > kCurVersion)
-	{
-		PrintLoaderError(
-			"You are using a newer version of Oblivion Remastered than this version of xOBSE64 supports.\n"
-			"If this version just came out, please be patient while xOBSE64 is updated for it.\n"
-			"In the meantime, please check " XOBSE64_RELEASES_URL " for updates.\n"
-			"Runtime: %d.%d.%d\n"
-			"xOBSE64: %s",
-			GET_EXE_VERSION_MAJOR(versionInternal), GET_EXE_VERSION_MINOR(versionInternal), GET_EXE_VERSION_BUILD(versionInternal),
-			XOBSE64_VERSION_STRING);
-	}
-
-	return true;
 }

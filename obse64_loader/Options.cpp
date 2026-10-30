@@ -229,7 +229,6 @@ void Options::PrintUsage(void)
 	_MESSAGE("  -crconly - just identify the EXE, don't launch anything");
 	_MESSAGE("  -waitforclose - wait for the launched program to close");
 	_MESSAGE("  -v - print verbose messages to the console");
-	_MESSAGE("  -minfo - log information about the DLLs loaded in to the target process");
 	_MESSAGE("  -noskiplauncher - does not skip the default Bethesda launcher window");
 	_MESSAGE("                    note: specifying this option may cause compatibility problems");
 	_MESSAGE("  -launchsteam - ignored for backwards compatibility");
