@@ -1367,11 +1367,15 @@ static CommandInfo kCommandInfo_UnequipItemNS =
 // yet is skipped, not made).
 //
 // The scan reads a cell's list once, as it comes to the cell, and keeps its references' form IDs
-// rather than a place in the list: the game frees the list's nodes as references leave the cell,
-// and scripts move the references they're given, or go on with a scan in a later frame. Each
-// reference is looked up when its turn comes, and passed over if it's gone or has left the cell.
-// One that comes into a cell after the scan has read it isn't given, which also keeps a script
-// that places something for each reference it's given from never finishing.
+// rather than a place in the list, since the list's nodes don't stay put. A reference leaving the
+// cell (0x06660170) frees its node, or for the cell's first reference copies the second into the
+// first node, which the cell holds, and frees the second; and scripts move the references they're
+// given, or go on with a scan in a later frame. Classic kept the node of the reference it gave
+// last, and OBSE64 the node after it, and either could be freed before the next call. Each
+// reference is now looked up when its turn comes, and passed over if it's gone or has left the
+// cell. One that comes into the cell after the scan has read it isn't given, as a walk never gave
+// one: the game adds a reference to the front of the list (0x06655BE0, with 0x06579740), where the
+// walk has been.
 typedef TESObjectCELL * (* _TESWorldSpace_LookupCell)(TESWorldSpace * world, s32 x, s32 y);
 static RelocAddr <_TESWorldSpace_LookupCell> TESWorldSpace_LookupCell(0x06720A00);
 
