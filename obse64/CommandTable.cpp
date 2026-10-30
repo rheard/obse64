@@ -122,7 +122,7 @@ void AddScriptCommands()
 	ADD(ATan);
 	ADD(Log);
 	ADD(Exp);
-	ADD(GetParentCell);
+	ADD_RET(GetParentCell, kRetnType_Form);
 	ADD(Log10);
 	ADD(Floor);
 	ADD(Ceil);

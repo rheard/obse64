@@ -243,7 +243,7 @@ static const PortedCommand kPortedCommands[] =
 	{ &kCommandInfo_GetEquippedWeaponPoison,	kRetnType_Form },
 	{ &kCommandInfo_SetEquippedWeaponPoison,	kRetnType_Default },
 	{ &kCommandInfo_RemoveEquippedWeaponPoison,	kRetnType_Form },
-	{ &kCommandInfo_GetHotKeyItem,	kRetnType_Form },
+	{ &kCommandInfo_GetHotKeyItem,	kRetnType_Default },
 	{ &kCommandInfo_ClearHotKey,	kRetnType_Default },
 	{ &kCommandInfo_SetHotKeyItem,	kRetnType_Default },
 };
