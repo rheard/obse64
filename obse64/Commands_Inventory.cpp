@@ -972,6 +972,36 @@ static u32 GetFullCharge(TESForm * form)
 	return enchantable ? enchantable->enchantment : 0;
 }
 
+static float GetChargeOf(BaseExtraList * list, TESForm * item)
+{
+	auto * xCharge = list ? list->Get<ExtraCharge>() : nullptr;
+	return xCharge ? xCharge->charge : float(GetFullCharge(item));
+}
+
+// As classic: back at full, the item loses its ExtraCharge, as a fully charged item has none; any
+// other value is kept. A list isn't given an ExtraCharge for an item that can't be enchanted. True
+// if the list changed, so not for full charge on an item already at full.
+static bool SetChargeOf(BaseExtraList * list, TESForm * item, float charge)
+{
+	if(!list || !DYNAMIC_CAST(item, TESForm, TESEnchantableForm)) return false;
+
+	auto * xCharge = list->Get<ExtraCharge>();
+	if(charge == float(GetFullCharge(item)))
+	{
+		if(!xCharge) return false;
+
+		BaseExtraList_Remove(list, xCharge, true);
+	}
+	else if(xCharge)
+		xCharge->charge = charge;
+	else if(void * mem = GameHeap_Allocate(sizeof(ExtraCharge)))
+		BaseExtraList_Add(list, ExtraCharge_Construct(mem, charge));
+	else
+		return false;
+
+	return true;
+}
+
 static bool Cmd_GetObjectCharge_Execute(COMMAND_ARGS)
 {
 	*result = 0;
@@ -997,8 +1027,7 @@ class feGetCurrentCharge : public FoundEquipped
 {
 public:
 	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
-		auto * xCharge = extendData->m_data->Get<ExtraCharge>();
-		*result = xCharge ? xCharge->charge : GetFullCharge(entryData->type);
+		*result = GetChargeOf(extendData->m_data, entryData->type);
 		return true;
 	}
 };
@@ -1033,26 +1062,11 @@ public:
 	feModCurrentCharge(float amount) : m_amount(amount) { }
 
 	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
-		if(!DYNAMIC_CAST(entryData->type, TESForm, TESEnchantableForm)) return true;
-
-		ExtraDataList * list = extendData->m_data;
-		auto * xCharge = list->Get<ExtraCharge>();
-
-		float fullCharge = float(GetFullCharge(entryData->type));
-		float charge = (xCharge ? xCharge->charge : fullCharge) + m_amount;
+		float charge = GetChargeOf(extendData->m_data, entryData->type) + m_amount;
 		if(charge < 0)
 			charge = 0;
 
-		if(charge == fullCharge)
-		{
-			if(xCharge)
-				BaseExtraList_Remove(list, xCharge, true);
-		}
-		else if(xCharge)
-			xCharge->charge = charge;
-		else if(void * mem = GameHeap_Allocate(sizeof(ExtraCharge)))
-			BaseExtraList_Add(list, ExtraCharge_Construct(mem, charge));
-
+		SetChargeOf(extendData->m_data, entryData->type, charge);
 		return true;
 	}
 };
@@ -1091,8 +1105,7 @@ static bool Cmd_GetCurrentCharge_Execute(COMMAND_ARGS)
 	if(!list)
 		list = &thisObj->extraList;
 
-	auto * xCharge = list->Get<ExtraCharge>();
-	*result = xCharge ? xCharge->charge : GetFullCharge(thisObj->baseForm);
+	*result = GetChargeOf(list, thisObj->baseForm);
 
 	if(IsConsoleMode())
 		Console_Print("GetCurrentCharge >> %.2f", *result);
@@ -1116,42 +1129,21 @@ static bool ChangeCurrentCharge(COMMAND_ARGS, bool mod)
 
 	bool isInventoryRef = IsInventoryRef(thisObj);
 	BaseExtraList * list = isInventoryRef ? GetInventoryRefList(thisObj, false) : &thisObj->extraList;
-	auto * xCharge = list ? list->Get<ExtraCharge>() : nullptr;
 
 	float fullCharge = float(GetFullCharge(item));
-	float charge = (mod ? (xCharge ? xCharge->charge : fullCharge) : 0) + value;
+	float charge = (mod ? GetChargeOf(list, item) : 0) + value;
+	if(!(charge >= 0 && charge <= fullCharge)) return true;
 
-	if(charge == fullCharge)
+	// a stack of items without extra data of their own needs a list only for a charge below full
+	if(!list && charge != fullCharge)
+		list = GetInventoryRefList(thisObj, true);
+
+	if(SetChargeOf(list, item, charge))
 	{
-		if(xCharge)
-		{
-			BaseExtraList_Remove(list, xCharge, true);
-			*result = 1;
-		}
+		*result = 1;
+		if(isInventoryRef)
+			RefreshInventoryRef(thisObj);
 	}
-	else if(charge >= 0 && charge <= fullCharge)
-	{
-		if(xCharge)
-		{
-			xCharge->charge = charge;
-			*result = 1;
-		}
-		else
-		{
-			if(!list)
-				list = GetInventoryRefList(thisObj, true);
-
-			void * mem = list ? GameHeap_Allocate(sizeof(ExtraCharge)) : nullptr;
-			if(mem)
-			{
-				BaseExtraList_Add(list, ExtraCharge_Construct(mem, charge));
-				*result = 1;
-			}
-		}
-	}
-
-	if(*result && isInventoryRef)
-		RefreshInventoryRef(thisObj);
 
 	return true;
 }
@@ -1387,21 +1379,7 @@ public:
 	feSetCurrentCharge(float charge) : m_charge(charge) { }
 
 	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
-		if(!DYNAMIC_CAST(entryData->type, TESForm, TESEnchantableForm)) return true;
-
-		ExtraDataList * list = extendData->m_data;
-		auto * xCharge = list->Get<ExtraCharge>();
-
-		if(m_charge == float(GetFullCharge(entryData->type)))
-		{
-			if(xCharge)
-				BaseExtraList_Remove(list, xCharge, true);
-		}
-		else if(xCharge)
-			xCharge->charge = m_charge;
-		else if(void * mem = GameHeap_Allocate(sizeof(ExtraCharge)))
-			BaseExtraList_Add(list, ExtraCharge_Construct(mem, m_charge));
-
+		SetChargeOf(extendData->m_data, entryData->type, m_charge);
 		return true;
 	}
 };
