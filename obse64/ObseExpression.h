@@ -51,6 +51,11 @@ public:
 	u32				NumArgs() const { return u32(m_args.size()); }
 	const Value &	Arg(u32 idx) const { return m_args[idx]; }
 
+	// A command whose return type is ambiguous (Call's) gives its value here too, for an
+	// expression calling it to take whole, a form as a form and a string as a string: the result it
+	// returns is only a number.
+	static void		SetAmbiguousResult(const Value & value);
+
 private:
 	bool	Evaluate(Value * out);
 	bool	ReadToken(const u8 * end, std::vector <Value> * stack);

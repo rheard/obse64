@@ -294,7 +294,12 @@ static bool Cmd_Call_Execute(COMMAND_ARGS)
 
 	ObseExpression eval(PASS_COMMAND_ARGS);
 	ObseExpression::Value function;
-	if(!eval.ExtractCallArgs(&function)) return true;
+	bool extracted = eval.ExtractCallArgs(&function);
+
+	// An expression calling this takes the function's value whole, once it returns. A Call among
+	// the arguments has given its own by now, which mustn't pass for this one's.
+	ObseExpression::SetAmbiguousResult(ObseExpression::Value());
+	if(!extracted) return true;
 
 	TESForm * form = (function.type == ObseExpression::Value::kType_Form && function.formID) ? LookupFormByID(function.formID) : nullptr;
 	Script * functionScript = form ? DYNAMIC_CAST(form, TESForm, Script) : nullptr;
@@ -306,6 +311,8 @@ static bool Cmd_Call_Execute(COMMAND_ARGS)
 
 	ObseExpression::Value returned;
 	if(!CallUserFunction(functionScript, thisObj, containingObj, args, &returned)) return true;
+
+	ObseExpression::SetAmbiguousResult(returned);
 
 	switch(returned.type)
 	{
@@ -322,7 +329,7 @@ static bool Cmd_Call_Execute(COMMAND_ARGS)
 			// Script derives from TESForm
 			static std::set <u32> s_reported;
 			if(s_reported.insert(reinterpret_cast <TESForm *>(functionScript)->refID).second)
-				_MESSAGE("function script %08X returned a string, which Call can't give yet", reinterpret_cast <TESForm *>(functionScript)->refID);
+				_MESSAGE("function script %08X returned a string, which Call can only pass to an OBSE expression so far", reinterpret_cast <TESForm *>(functionScript)->refID);
 		}
 		break;
 	}

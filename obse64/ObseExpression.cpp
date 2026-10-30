@@ -28,6 +28,19 @@ enum
 	kOpType_MakePair =	36,	// key::value
 };
 
+// what the ambiguous command run last gave, for EvaluateCommand
+static ObseExpression::Value s_ambiguousResult;
+
+void ObseExpression::SetAmbiguousResult(const Value & value)
+{
+	s_ambiguousResult = value;
+
+	// the value alone, not the variable of the function's it was read from
+	s_ambiguousResult.isLocalVar = false;
+	s_ambiguousResult.varType = 0;
+	s_ambiguousResult.varIdx = 0;
+}
+
 ObseExpression::ObseExpression(COMMAND_ARGS) :
 	m_scriptData((const u8 *)scriptData),
 	m_opcodeOffsetPtr(opcodeOffsetPtr),
@@ -402,6 +415,10 @@ bool ObseExpression::EvaluateCommand(Value * out)
 	double cmdResult = 0;
 	u32 offset = u32(args - m_scriptData);
 
+	CommandReturnType retnType = GetCommandReturnType(opcode);
+	if(retnType == kRetnType_Ambiguous)
+		s_ambiguousResult = Value();
+
 	if(!cmd->execute(cmd->params, (const char *)m_scriptData, callingObj, refIdx ? nullptr : m_containingObj,
 		m_script, m_locals, &cmdResult, &offset))
 	{
@@ -411,7 +428,7 @@ bool ObseExpression::EvaluateCommand(Value * out)
 
 	m_data = args + argsLen - sizeof(argsLen);
 
-	switch(GetCommandReturnType(opcode))
+	switch(retnType)
 	{
 		case kRetnType_Default:
 			out->type = Value::kType_Number;
@@ -421,6 +438,19 @@ bool ObseExpression::EvaluateCommand(Value * out)
 		case kRetnType_Form:
 			out->type = Value::kType_Form;
 			out->formID = FormIDFromValue(cmdResult);
+			break;
+
+		case kRetnType_Ambiguous:
+			// what the command gave, or its number if it gave nothing (a function that set no value)
+			if(s_ambiguousResult.type != Value::kType_Invalid)
+			{
+				*out = s_ambiguousResult;
+			}
+			else
+			{
+				out->type = Value::kType_Number;
+				out->number = cmdResult;
+			}
 			break;
 
 		default:
