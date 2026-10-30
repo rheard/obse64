@@ -197,10 +197,14 @@ private:
 		return TRUE;
 	}
 
-	// subclasses the game's window, Unreal's own on this thread, once (or again, if it's been made anew)
+	// Subclasses the game's window, Unreal's own on this thread, once, and again only if it's been
+	// made anew. A window whose procedure isn't ours any more is left alone: whatever subclassed it
+	// after us (an overlay, another plugin) passes its messages on to ours, so subclassing it again
+	// would make that procedure our original, and the two would pass each message back and forth
+	// until the stack ran out.
 	bool Subclass()
 	{
-		if(m_window && IsWindow(m_window) && GetWindowLongPtrW(m_window, GWLP_WNDPROC) == LONG_PTR(WindowProc))
+		if(m_window && IsWindow(m_window))
 			return true;
 
 		m_window = nullptr;
