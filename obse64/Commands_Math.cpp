@@ -152,7 +152,7 @@ CommandInfo kCommandInfo_Exp =
 
 CommandInfo kCommandInfo_Log10 =
 {
-	"Exp", "exp",
+	"Log10", "log10",
 	0, "", 0,
 	1, kParams_OneFloat,
 	&UnaryMathFn <log10f>
@@ -182,8 +182,16 @@ CommandInfo kCommandInfo_Abs =
 	&UnaryMathFn <fabsf>
 };
 
-float FloatRand(float min, float max)
+// a number from min up to max, never max itself: kept a double, as classic OBSE kept it, since
+// rounded to a float it can land on max
+static bool Cmd_Rand_Execute(COMMAND_ARGS)
 {
+	*result = 0;
+
+	float min = 0, max = 0;
+	if(!ExtractArgs(EXTRACT_ARGS, &min, &max))
+		return true;
+
 	if(max < min)
 	{
 		float temp = min;
@@ -193,9 +201,9 @@ float FloatRand(float min, float max)
 
 	float range = max - min;
 
-	double value = MersenneTwister::genrand_real2() * range;
+	*result = MersenneTwister::genrand_real2() * range + min;
 
-	return float(value + min);
+	return true;
 }
 
 CommandInfo kCommandInfo_Rand =
@@ -203,7 +211,7 @@ CommandInfo kCommandInfo_Rand =
 	"Rand", "r",
 	0, "", 0,
 	2, kParams_TwoFloats,
-	&BinaryMathFn <FloatRand>
+	Cmd_Rand_Execute
 };
 
 CommandInfo kCommandInfo_Pow =
@@ -264,7 +272,7 @@ CommandInfo kCommandInfo_dCos =
 
 CommandInfo kCommandInfo_dTan =
 {
-	"Tanh", "dtanh",
+	"Tan", "dtan",
 	0, "", 0,
 	1, kParams_OneFloat,
 	&UnaryMathFn_DegToRad <tanf>
@@ -291,7 +299,7 @@ CommandInfo kCommandInfo_dATan =
 	"ATan", "datan",
 	0, "", 0,
 	1, kParams_OneFloat,
-	&UnaryMathFn_RadToDeg <tanf>
+	&UnaryMathFn_RadToDeg <atanf>
 };
 
 CommandInfo kCommandInfo_dATan2 =
