@@ -1909,13 +1909,23 @@ static bool FormatClassicString(const char * fmt, const double * args, u32 numAr
 				break;
 
 			case '{':
-				// %{text%} keeps text only if the argument is nonzero
+				// %{text%} keeps text only if the argument is nonzero. Text left out still uses up
+				// the numbers its specifiers would have taken, so later ones line up, as classic's
+				// did: two for %c, none for %% %q %r, one for any other.
 				if(!nextArg(&value)) return false;
 				p++;
 				if(value == 0)
 				{
 					const char * close = strstr(p + 1, "%}");
-					p = close ? close + 1 : p + strlen(p) - 1;
+					const char * end = close ? close : p + strlen(p);
+
+					for(const char * spec = strchr(p + 1, '%'); spec && spec < end && spec[1]; spec = strchr(spec + 2, '%'))
+					{
+						u32 skip = strchr("cC", spec[1]) ? 2 : (strchr("%qQrR", spec[1]) ? 0 : 1);
+						argIdx = (argIdx + skip < numArgs) ? argIdx + skip : numArgs;
+					}
+
+					p = close ? close + 1 : end - 1;
 				}
 				break;
 
