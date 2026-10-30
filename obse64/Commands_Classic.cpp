@@ -1958,7 +1958,9 @@ static bool FormatClassicString(const char * fmt, const double * args, u32 numAr
 
 			default:
 			{
-				// a printf-style number: flags, width, precision, conversion
+				// a printf-style number: flags, width, precision, length, conversion. A length (%lf,
+				// %ld) is left out of what's passed on, as each number is a double here; classic's
+				// sprintf printed %lf as %f.
 				const char * end = p + 1;
 				while(*end && strchr("-+ #0", *end)) end++;
 				while(isdigit((u8)*end)) end++;
@@ -1968,17 +1970,22 @@ static bool FormatClassicString(const char * fmt, const double * args, u32 numAr
 					while(isdigit((u8)*end)) end++;
 				}
 
+				const char * length = end;
+				while(*end && strchr("hlLjzt", *end)) end++;
+
 				if(!nextArg(&value)) return false;
 
 				char buf[128];
 				if(*end && strchr("fFgGeE", *end))
 				{
-					snprintf(buf, sizeof(buf), std::string(p, end + 1).c_str(), value);
+					std::string spec(p, length);
+					spec += *end;
+					snprintf(buf, sizeof(buf), spec.c_str(), value);
 					*out += buf;
 				}
 				else if(*end && strchr("diu", *end))
 				{
-					std::string spec(p, end);
+					std::string spec(p, length);
 					spec += (*end == 'u') ? "llu" : "lld";
 					snprintf(buf, sizeof(buf), spec.c_str(), (long long)value);
 					*out += buf;
