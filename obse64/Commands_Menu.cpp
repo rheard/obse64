@@ -12,9 +12,8 @@
 
 enum
 {
-	// classic's tile values for a menu list's items: what kind of item, and its index
+	// classic's tile value for what kind of item a menu list's item is
 	kTileValue_user7 =	0xFB5,
-	kTileValue_user13 =	0xFBB,
 };
 
 // The magic menu is still classic's MagicMenu under Unreal's. Unreal's handlers for hovering or

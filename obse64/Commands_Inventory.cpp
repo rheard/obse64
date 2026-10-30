@@ -202,14 +202,12 @@ bool Cmd_GetInventoryItemType_Execute(COMMAND_ARGS)
 
 enum
 {
-	kSlot_None = -1,
 	// lower slots are TESBipedModelForm::kPart_*
 	kSlot_RightRing = TESBipedModelForm::kPart_RightRing,
 	kSlot_LeftRing,
 	kSlot_Torch = TESBipedModelForm::kPart_Torch,	// 14
 	kSlot_Weapon = TESBipedModelForm::kPart_Max,	// 16
 	kSlot_Ammo,
-	kSlot_RangedWeapon,
 };
 
 bool ItemSlotMatches(TESForm * pForm, u32 slot)
@@ -247,47 +245,6 @@ bool ItemSlotMatches(TESForm * pForm, u32 slot)
 	return bMatches;
 }
 
-static u32 GetItemSlot(TESForm * type)
-{
-	if(type)
-	{
-		if(auto * bip = DYNAMIC_CAST(type, TESForm, TESBipedModelForm))
-			return bip->GetSlot();
-		else if(DYNAMIC_CAST(type, TESForm, TESObjectWEAP))
-			return kSlot_Weapon;
-		else if(DYNAMIC_CAST(type, TESForm, TESAmmo))
-			return kSlot_Ammo;
-		else
-		{
-			TESObjectLIGH * pLight = DYNAMIC_CAST(type, TESForm, TESObjectLIGH);
-			if(pLight && pLight->IsCarriable())
-				return kSlot_Torch;
-		}
-	}
-
-	return kSlot_None;
-}
-
-static u32 GetItemSlotMask(TESForm * type)
-{
-	u32	result = 0;
-
-	if(type)
-	{
-		auto * bip = DYNAMIC_CAST(type, TESForm, TESBipedModelForm);
-		auto * weap = DYNAMIC_CAST(type, TESForm, TESObjectWEAP);
-
-		if(bip)
-			result = bip->partMask;
-		else if(weap)
-			result = (weap->type == TESObjectWEAP::kType_Bow) ? (1 << kSlot_RangedWeapon) : (1 << kSlot_Weapon);
-		else if(DYNAMIC_CAST(type, TESForm, TESAmmo))
-			result = (1 << kSlot_Ammo);
-	}
-
-	return result;
-}
-
 class FoundEquipped
 {
 public:
@@ -297,11 +254,6 @@ public:
 static inline bool IsRingSlot(u32 slot)
 {
 	return slot == kSlot_RightRing || slot == kSlot_LeftRing;
-}
-
-static inline bool IsOppositeRing(u32 slot, u32 slotIdx)
-{
-	return (slot == kSlot_RightRing && slotIdx == kSlot_LeftRing) || (slot == kSlot_LeftRing && slotIdx == kSlot_RightRing);
 }
 
 static bool FindEquipped(TESObjectREFR * thisObj, u32 slotIdx, FoundEquipped * foundEquippedFunctor, double * result)
@@ -350,55 +302,12 @@ static bool FindEquipped(TESObjectREFR * thisObj, u32 slotIdx, FoundEquipped * f
 	return false;
 }
 
-static bool FindEquippedByMask(TESObjectREFR * thisObj, u32 targetMask, u32 targetData, FoundEquipped * foundEquippedFunctor, double * result)
-{
-	auto * containerChanges = thisObj->extraList.Get<ExtraContainerChanges>();
-	if(containerChanges && containerChanges->data && containerChanges->data->objList)
-	{
-		for(auto * entry = &containerChanges->data->objList->node; entry; entry = entry->m_next)
-		{
-			// do the fast check first (an object must have extend data to be equipped)
-			if(entry->m_data && entry->m_data->extraData && entry->m_data->type)
-			{
-				// does it match the slot?
-				u32 slotMask = GetItemSlotMask(entry->m_data->type);
-				if((slotMask & targetMask) == targetData)
-				{
-					for(auto * extend = &entry->m_data->extraData->node; extend; extend = extend->m_next)
-					{
-						if(extend->m_data)
-						{
-							// is it equipped?
-							bool	isEquipped = false;
-
-							isEquipped = extend->m_data->Contains(kExtraData_Worn);
-
-							// special-case for left ring
-							if(!isEquipped)
-								isEquipped = (slotMask & (1 << TESBipedModelForm::kPart_LeftRing)) && extend->m_data->Contains(kExtraData_WornLeft);
-
-							if(isEquipped)
-							{
-								return foundEquippedFunctor->Found(entry->m_data, result, extend);
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return false;
-}
-
 class feGetObject: public FoundEquipped
 {
 public:
 	virtual bool Found(ExtraContainerChanges::Entry * entryData, double * result, BSSimpleList <ExtraDataList *>::Node * extendData) {
 		if(entryData) {
 			SetFormResult(result, entryData->type->refID);
-
-			//Console_Print("refID = %08X (%s)", entryData->type->refID, GetFullName(entry->data->type));
 			return true;
 		}
 		return false;
