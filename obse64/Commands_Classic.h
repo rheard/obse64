@@ -15,6 +15,14 @@ void InstallStringVarHooks();
 // compiler, which isn't ported: they run in compiled scripts but can't be typed in the console
 bool Cmd_Expression_Parse(u32 numParams, const ParamInfo * paramInfo, ScriptLineBuffer * lineBuf, ScriptBuffer * scriptBuf);
 
+// IsWeapon and the rest of that family, and IsCreature: whether the form given, or the calling
+// reference's base without one, is of this type (Commands_Inventory.cpp)
+bool IsFormType_Execute(COMMAND_ARGS, u8 typeID, const char * name, bool anyForm);
+
+// redirects the game's item messages, so AddItemNS and the rest can skip them
+// (Commands_Inventory.cpp)
+void InstallItemMessageHook();
+
 // whether a control (classic's number) is down in the game's controls
 bool IsControlDown(u32 control);
 

@@ -9,8 +9,6 @@
 #include <cstring>
 #include <set>
 
-CommandInfo * GetCommandInfo(u32 opcode);	// Hooks_Script.cpp
-
 // classic OBSE's operators, compiled as their number in its OperatorType
 enum
 {

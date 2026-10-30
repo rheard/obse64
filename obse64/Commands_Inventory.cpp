@@ -1,11 +1,19 @@
 #include "GameScript.h"
+#include "Commands_Classic.h"
 #include "GameBSExtraData.h"
 #include "GameExtraData.h"
+#include "GameMenus.h"
 #include "GameObjects.h"
 #include "GameRTTI.h"
 #include "GameConsole.h"
+#include "Hooks_Script.h"
 #include "InventoryReference.h"
 #include "ParamInfos.h"
+#include "obse64_common/BranchTrampoline.h"
+#include "obse64_common/Log.h"
+#include <cctype>
+#include <cstdio>
+#include <string>
 #include <vector>
 #include <map>
 
@@ -442,6 +450,512 @@ CommandInfo kCommandInfo_GetInventoryItemType =
 	1,
 	1, kParams_OneInt,
 	Cmd_GetInventoryItemType_Execute
+};
+
+// classic OBSE's commands about base objects: the type checks, values, quest items and model paths
+// (Commands_Classic.cpp registers them)
+
+// a reference passed as the argument stands for its base object, as in classic OBSE
+static TESForm * FormArgOrBase(TESForm * form, TESObjectREFR * thisObj)
+{
+	if(form)
+	{
+		if(auto * refr = DYNAMIC_CAST(form, TESForm, TESObjectREFR))
+			return refr->baseForm;
+
+		return form;
+	}
+
+	return thisObj ? thisObj->baseForm : nullptr;
+}
+
+static bool Cmd_GetBaseObject_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	if(!thisObj || !thisObj->baseForm) return true;
+
+	SetFormResult(result, thisObj->baseForm->refID);
+
+	if(IsConsoleMode())
+		Console_Print("GetBaseObject >> %08X", thisObj->baseForm->refID);
+
+	return true;
+}
+
+CommandInfo kCommandInfo_GetBaseObject =
+{
+	"GetBaseObject", "",
+	0,
+	"returns the base object of the reference",
+	1,
+	0, nullptr,
+	Cmd_GetBaseObject_Execute
+};
+
+static bool Cmd_GetObjectType_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESForm * form = nullptr;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &form)) return true;
+
+	form = FormArgOrBase(form, thisObj);
+	if(form)
+		*result = form->typeID;
+
+	if(IsConsoleMode())
+		Console_Print("GetObjectType >> %d", (int)*result);
+
+	return true;
+}
+
+CommandInfo kCommandInfo_GetObjectType =
+{
+	"GetObjectType", "",
+	0,
+	"returns the type id of the specified object or the reference on which it was called",
+	0,
+	1, kParams_OneOptionalInventoryObject,
+	Cmd_GetObjectType_Execute
+};
+
+// With anyForm, the argument may be any form, as classic took for IsWeapon and the rest of that
+// family; IsCreature's it read as the game does, so an actor base only.
+bool IsFormType_Execute(COMMAND_ARGS, u8 typeID, const char * name, bool anyForm)
+{
+	*result = 0;
+
+	TESForm * form = nullptr;
+	if(anyForm)
+		ExtractArgsAnyForm(EXTRACT_ARGS, &form);
+	else
+		ExtractArgs(EXTRACT_ARGS, &form);
+
+	form = FormArgOrBase(form, thisObj);
+	if(form && form->typeID == typeID)
+		*result = 1;
+
+	if(IsConsoleMode())
+		Console_Print("%s >> %d", name, (int)*result);
+
+	return true;
+}
+
+#define IS_FORM_TYPE(name, type, what)													\
+	static bool Cmd_##name##_Execute(COMMAND_ARGS)										\
+	{																					\
+		return IsFormType_Execute(PASS_COMMAND_ARGS, kFormType_##type, #name, true);	\
+	}																					\
+																						\
+	CommandInfo kCommandInfo_##name =													\
+	{																					\
+		#name, "",																		\
+		0,																				\
+		"returns 1 if the specified base object is " what " and 0 if it is not",		\
+		0,																				\
+		1, kParams_OneOptionalInventoryObject,											\
+		Cmd_##name##_Execute															\
+	};
+
+IS_FORM_TYPE(IsWeapon,		Weapon,			"a weapon")
+IS_FORM_TYPE(IsAmmo,		Ammo,			"ammo")
+IS_FORM_TYPE(IsArmor,		Armor,			"armor")
+IS_FORM_TYPE(IsClothing,	Clothing,		"clothing")
+IS_FORM_TYPE(IsBook,		Book,			"a book")
+IS_FORM_TYPE(IsIngredient,	Ingredient,		"an ingredient")
+IS_FORM_TYPE(IsContainer,	Container,		"a container")
+IS_FORM_TYPE(IsKey,			Key,			"a key")
+IS_FORM_TYPE(IsAlchemyItem,	AlchemyItem,	"an alchemy item")
+IS_FORM_TYPE(IsApparatus,	Apparatus,		"an apparatus")
+IS_FORM_TYPE(IsSoulGem,		SoulGem,		"a soul gem")
+IS_FORM_TYPE(IsSigilStone,	SigilStone,		"a sigil stone")
+IS_FORM_TYPE(IsDoor,		Door,			"a door")
+IS_FORM_TYPE(IsActivator,	Activator,		"an activator")
+IS_FORM_TYPE(IsLight,		Light,			"a light")
+IS_FORM_TYPE(IsMiscItem,	Misc,			"a misc item")
+IS_FORM_TYPE(IsFurniture,	Furniture,		"furniture")
+IS_FORM_TYPE(IsFlora,		Flora,			"flora")
+
+#undef IS_FORM_TYPE
+
+// The game's value of an item, what a theft's bounty is worked out from (0x06955040): the value
+// component's for most items, and for potions and ingredients their magic item's, which works out
+// an autocalc potion's value. -1 for a form with no value.
+typedef s32 (* _GetItemValue)(TESForm * form);
+static RelocAddr <_GetItemValue> GetItemValue(0x067D6A20);
+
+static bool Cmd_GetGoldValue_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESForm * form = nullptr;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &form)) return true;
+
+	form = FormArgOrBase(form, thisObj);
+	if(form)
+	{
+		s32 value = GetItemValue(form);
+		if(value > 0)
+			*result = value;
+	}
+
+	if(IsConsoleMode())
+		Console_Print("GetGoldValue >> %d", (int)*result);
+
+	return true;
+}
+
+CommandInfo kCommandInfo_GetGoldValue =
+{
+	"GetGoldValue", "",
+	0,
+	"returns the gold value of the object or calling reference",
+	0,
+	1, kParams_OneOptionalInventoryObject,
+	Cmd_GetGoldValue_Execute
+};
+
+// A quest item is a base object with form flag 0x400 (TESForm::IsQuestItem). SetQuestItem also
+// marks the flags changed, so a save keeps the change, as vanilla SetQuestObject (0x06A1AEA0) does.
+static bool Cmd_IsQuestItem_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	TESForm * form = nullptr;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &form)) return true;
+
+	form = FormArgOrBase(form, thisObj);
+	if(form && form->IsQuestItem())
+		*result = 1;
+
+	if(IsConsoleMode())
+		Console_Print("IsQuestItem >> %d", (int)*result);
+
+	return true;
+}
+
+static bool Cmd_SetQuestItem_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+
+	u32 questItem = 0;
+	TESForm * form = nullptr;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &questItem, &form)) return true;
+
+	form = FormArgOrBase(form, thisObj);
+	if(form)
+		form->SetQuestItem(questItem != 0);
+
+	return true;
+}
+
+static ParamInfo kParams_SetObjectInteger[2] =
+{
+	{	"value", kParamType_Integer, 0 },
+	{	"type", kParamType_InventoryObject, 1 },
+};
+
+CommandInfo kCommandInfo_IsQuestItem =
+{
+	"IsQuestItem", "",
+	0,
+	"returns 1 if the object or calling reference is a quest item",
+	0,
+	1, kParams_OneOptionalInventoryObject,
+	Cmd_IsQuestItem_Execute
+};
+
+CommandInfo kCommandInfo_SetQuestItem =
+{
+	"SetQuestItem", "",
+	0,
+	"Sets whether the specified object or object reference is a quest item.",
+	0,
+	2, kParams_SetObjectInteger,
+	Cmd_SetQuestItem_Execute
+};
+
+
+// A model's path is the BSString at +0x08 of TESModel. Armor and clothing have no TESModel: their
+// models are in the biped model component, where the game loads the male ground (world) model,
+// MOD2, into +0x70 (0x06820F40). Paths are set with the game's string setter, which is all
+// TESModel's own setter does (0x067D6740).
+typedef bool (* _BSString_Set)(BSStringT * str, const char * src, u32 minLength);
+static RelocAddr <_BSString_Set> BSString_Set(0x06562E40);
+
+static BSStringT * ModelPathOf(TESForm * form, bool maleGround)
+{
+	if(!form) return nullptr;
+
+	if(maleGround)
+	{
+		auto * biped = DYNAMIC_CAST(form, TESForm, TESBipedModelForm);
+		return biped ? &biped->groundModel[0].nifPath : nullptr;
+	}
+
+	auto * model = DYNAMIC_CAST(form, TESForm, TESModel);
+	return model ? &model->nifPath : nullptr;
+}
+
+// classic's ModelPathIncludes and friends: is text part of the path, ignoring case
+static bool ComparePath_Execute(COMMAND_ARGS, bool maleGround, const char * name)
+{
+	*result = 0;
+
+	char text[BUFSIZ] = { 0 };
+	TESForm * form = nullptr;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &text, &form)) return true;
+
+	BSStringT * path = ModelPathOf(FormArgOrBase(form, thisObj), maleGround);
+	if(path && path->m_data && *text)
+	{
+		std::string haystack(path->m_data), needle(text);
+		for(char & c : haystack) c = char(tolower(u8(c)));
+		for(char & c : needle) c = char(tolower(u8(c)));
+
+		if(haystack.find(needle) != std::string::npos)
+			*result = 1;
+	}
+
+	if(IsConsoleMode())
+		Console_Print("%s >> %d", name, (int)*result);
+
+	return true;
+}
+
+static bool CopyPath_Execute(COMMAND_ARGS, bool maleGround)
+{
+	*result = 0;
+
+	TESForm * src = nullptr;
+	TESForm * dest = nullptr;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &src, &dest)) return true;
+
+	BSStringT * srcPath = ModelPathOf(FormArgOrBase(src, nullptr), maleGround);
+	BSStringT * destPath = ModelPathOf(FormArgOrBase(dest, thisObj), maleGround);
+	if(srcPath && destPath && srcPath != destPath)
+		BSString_Set(destPath, srcPath->m_data, 0);
+
+	return true;
+}
+
+static bool Cmd_CompareModelPath_Execute(COMMAND_ARGS)
+{
+	return ComparePath_Execute(PASS_COMMAND_ARGS, false, "CompareModelPath");
+}
+
+static bool Cmd_CompareMaleGroundPath_Execute(COMMAND_ARGS)
+{
+	return ComparePath_Execute(PASS_COMMAND_ARGS, true, "CompareMaleGroundPath");
+}
+
+static bool Cmd_CopyModelPath_Execute(COMMAND_ARGS)
+{
+	return CopyPath_Execute(PASS_COMMAND_ARGS, false);
+}
+
+static bool Cmd_CopyMaleGroundPath_Execute(COMMAND_ARGS)
+{
+	return CopyPath_Execute(PASS_COMMAND_ARGS, true);
+}
+
+static ParamInfo kParams_SetObjectString[2] =
+{
+	{	"value", kParamType_String, 0 },
+	{	"type", kParamType_InventoryObject, 1 },
+};
+
+static ParamInfo kParams_CopyObjectPath[2] =
+{
+	{	"src", kParamType_InventoryObject, 0 },
+	{	"dest", kParamType_InventoryObject, 1 },
+};
+
+CommandInfo kCommandInfo_CompareModelPath =
+{
+	"CompareModelPath", "",
+	0,
+	"Returns 1 if the given string is part of the model path.",
+	0,
+	2, kParams_SetObjectString,
+	Cmd_CompareModelPath_Execute
+};
+
+CommandInfo kCommandInfo_CompareMaleGroundPath =
+{
+	"CompareMaleGroundPath", "",
+	0,
+	"Returns 1 if the given string is part of the male ground path.",
+	0,
+	2, kParams_SetObjectString,
+	Cmd_CompareMaleGroundPath_Execute
+};
+
+CommandInfo kCommandInfo_CopyModelPath =
+{
+	"CopyModelPath", "",
+	0,
+	"copies the model path from one object to another",
+	0,
+	2, kParams_CopyObjectPath,
+	Cmd_CopyModelPath_Execute
+};
+
+CommandInfo kCommandInfo_CopyMaleGroundPath =
+{
+	"CopyMaleGroundPath", "",
+	0,
+	"copies the male ground path from one object to another",
+	0,
+	2, kParams_CopyObjectPath,
+	Cmd_CopyMaleGroundPath_Execute
+};
+
+// classic OBSE's AddItem, RemoveItem, EquipItem and UnequipItem without the game's messages
+// (Commands_Classic.cpp registers them)
+
+// AddItem tells the player what was added with the game's message that has an icon (classic's
+// QueueUIMessage_2, 0x0656C3E0), called from 0x067DD888, and RemoveItem what was removed with the
+// same, from its own handler at 0x06A15F8B. AddItemNS and RemoveItemNS run the game's command with
+// that message skipped, as classic did by making the message functions return at once.
+static RelocAddr <uintptr_t> kAddItem_MessageCall(0x067DD888);
+static RelocAddr <uintptr_t> kRemoveItem_MessageCall(0x06A15F8B);
+
+// EquipItem and UnequipItem tell the player what was equipped with the game's plain message, a
+// notification (classic's QueueUIMessage, 0x0656C6B0), called from 0x06A09E6D and 0x06A20D6F,
+// which EquipItemNS and UnequipItemNS skip the same way.
+static RelocAddr <uintptr_t> kEquipItem_MessageCall(0x06A09E6D);
+static RelocAddr <uintptr_t> kUnequipItem_MessageCall(0x06A20D6F);
+
+enum
+{
+	kOpcode_AddItem =		0x1002,
+	kOpcode_RemoveItem =	0x1052,
+	kOpcode_EquipItem =		0x10EE,
+	kOpcode_UnequipItem =	0x10EF,
+};
+
+static u32 s_itemMessagesOff = 0;
+
+static bool IconMessage_Hook(void * message, float duration, const char * icon, void * sound, u8 unk)
+{
+	if(s_itemMessagesOff) return false;
+
+	return QueueUIMessageWithIcon(message, duration, icon, sound, unk);
+}
+
+static bool EquipItem_Message_Hook(UIMessage * message, void * unk, u32 notification, float duration)
+{
+	if(s_itemMessagesOff) return false;
+
+	return QueueUIMessage(message, unk, notification, duration);
+}
+
+void InstallItemMessageHook()
+{
+	if(IsCallTo(kAddItem_MessageCall.getUIntPtr(), QueueUIMessageWithIcon.getUIntPtr()))
+		g_branchTrampoline.write5Call(kAddItem_MessageCall.getUIntPtr(), uintptr_t(IconMessage_Hook));
+	else
+		_ERROR("AddItem's message call isn't where expected; AddItemNS will show the message");
+
+	if(IsCallTo(kRemoveItem_MessageCall.getUIntPtr(), QueueUIMessageWithIcon.getUIntPtr()))
+		g_branchTrampoline.write5Call(kRemoveItem_MessageCall.getUIntPtr(), uintptr_t(IconMessage_Hook));
+	else
+		_ERROR("RemoveItem's message call isn't where expected; RemoveItemNS will show the message");
+
+	for(uintptr_t call : { kEquipItem_MessageCall.getUIntPtr(), kUnequipItem_MessageCall.getUIntPtr() })
+	{
+		if(IsCallTo(call, QueueUIMessage.getUIntPtr()))
+			g_branchTrampoline.write5Call(call, uintptr_t(EquipItem_Message_Hook));
+		else
+			_ERROR("an equip message call isn't where expected; EquipItemNS and UnequipItemNS will show it");
+	}
+}
+
+// runs the game's command with its item messages skipped
+static bool RunWithoutItemMessages(u32 opcode, COMMAND_ARGS)
+{
+	CommandInfo * cmd = GetCommandInfo(opcode);
+	if(!cmd || !cmd->execute) return false;
+
+	s_itemMessagesOff++;
+	bool ok = cmd->execute(cmd->params, scriptData, thisObj, containingObj, script, locals, result, opcodeOffsetPtr);
+	s_itemMessagesOff--;
+
+	return ok;
+}
+
+static bool Cmd_AddItemNS_Execute(COMMAND_ARGS)
+{
+	return RunWithoutItemMessages(kOpcode_AddItem, PASS_COMMAND_ARGS);
+}
+
+static bool Cmd_RemoveItemNS_Execute(COMMAND_ARGS)
+{
+	return RunWithoutItemMessages(kOpcode_RemoveItem, PASS_COMMAND_ARGS);
+}
+
+static bool Cmd_EquipItemNS_Execute(COMMAND_ARGS)
+{
+	return RunWithoutItemMessages(kOpcode_EquipItem, PASS_COMMAND_ARGS);
+}
+
+static bool Cmd_UnequipItemNS_Execute(COMMAND_ARGS)
+{
+	return RunWithoutItemMessages(kOpcode_UnequipItem, PASS_COMMAND_ARGS);
+}
+
+static ParamInfo kParams_AddItem[2] =
+{
+	{	"item", kParamType_InventoryObject, 0 },
+	{	"quantity", kParamType_Integer, 0 },
+};
+
+CommandInfo kCommandInfo_AddItemNS =
+{
+	"AddItemNS", "",
+	0,
+	"version of AddItem which doesn't generate UI messages",
+	1,
+	2, kParams_AddItem,
+	Cmd_AddItemNS_Execute
+};
+
+CommandInfo kCommandInfo_RemoveItemNS =
+{
+	"RemoveItemNS", "",
+	0,
+	"version of RemoveItem which doesn't generate UI messages",
+	1,
+	2, kParams_AddItem,
+	Cmd_RemoveItemNS_Execute
+};
+
+static ParamInfo kParams_EquipItem[2] =
+{
+	{	"item", kParamType_InventoryObject, 0 },
+	{	"lockEquip", kParamType_Integer, 1 },
+};
+
+CommandInfo kCommandInfo_EquipItemNS =
+{
+	"EquipItemNS", "",
+	0,
+	"version of EquipItem which doesn't generate UI messages",
+	1,
+	2, kParams_EquipItem,
+	Cmd_EquipItemNS_Execute
+};
+
+CommandInfo kCommandInfo_UnequipItemNS =
+{
+	"UnequipItemNS", "",
+	0,
+	"version of UnequipItem which doesn't generate UI messages",
+	1,
+	2, kParams_EquipItem,
+	Cmd_UnequipItemNS_Execute
 };
 
 // classic OBSE's enchantment charge commands (Commands_Classic.cpp registers them)
