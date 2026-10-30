@@ -9,9 +9,13 @@ class SpellItem;
 
 static bool Cmd_GetActiveSpell_Execute(COMMAND_ARGS)
 {
-	MagicItem * activeMagicItem = CALL_MEMBER_FN(PlayerCharacter::Get(), GetActiveMagicItem)();
-
 	*result = 0;
+
+	// none before a game is under way, as at the main menu's console
+	PlayerCharacter * player = PlayerCharacter::Get();
+	if(!player) return true;
+
+	MagicItem * activeMagicItem = CALL_MEMBER_FN(player, GetActiveMagicItem)();
 
 	auto * activeMagicItemForm = DYNAMIC_CAST(activeMagicItem, MagicItem, TESForm);
 	if(activeMagicItemForm)
@@ -32,9 +36,10 @@ static bool Cmd_SetActiveSpell_Execute(COMMAND_ARGS)
 	if(!ExtractArgs(EXTRACT_ARGS, &spell)) return true;
 
 	auto * spellItem = DYNAMIC_CAST(spell, TESForm, SpellItem);
-	if(spellItem)
+	PlayerCharacter * player = PlayerCharacter::Get();
+	if(spellItem && player)
 	{
-		CALL_MEMBER_FN(PlayerCharacter::Get(), SetActiveSpell)(&spellItem->magicItem);
+		CALL_MEMBER_FN(player, SetActiveSpell)(&spellItem->magicItem);
 	}
 
 	return true;
