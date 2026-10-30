@@ -30,80 +30,6 @@
 // command. Commands that haven't been ported get a stub that reports itself and fails
 // the script line, the same way the unknown opcode failed before.
 
-// The game's controls (classic OSInputGlobals, class Controls here) are at +0x30 of the OS
-// globals. Unreal sets each control's state in it, and QueryControlState compares (1 << query)
-// with that: query 0 held (state 1), 1 just pressed (state 2), 2 just released (state 4).
-// Classic's DirectInput path is still in it, for when Unreal isn't the source.
-static RelocPtr <u8 *> g_osGlobals(0x0941F740);
-
-typedef u32 (* _Controls_QueryControlState)(void * controls, u32 control, u32 query);
-static RelocAddr <_Controls_QueryControlState> Controls_QueryControlState(0x0673EA30);
-
-enum
-{
-	kControl_Count =	29,	// the mappable controls, Forward (0) to Grab (0x1C)
-
-	kKeyQuery_Held =	0,
-	kKeyQuery_Pressed =	1,
-};
-
-bool IsControlDown(u32 control)
-{
-	if(control >= kControl_Count) return false;
-
-	// one Unreal handles itself
-	bool down = false;
-	if(PlayerControls_GetDown(control, &down)) return down;
-
-	u8 * osGlobals = *g_osGlobals;
-	void * controls = osGlobals ? *(void **)(osGlobals + 0x30) : nullptr;
-	if(!controls) return false;
-
-	return Controls_QueryControlState(controls, control, kKeyQuery_Held) ||
-		Controls_QueryControlState(controls, control, kKeyQuery_Pressed);
-}
-
-static bool Cmd_IsControlPressed_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-
-	u32 control = 0;
-	if(!ExtractArgs(EXTRACT_ARGS, &control)) return true;
-
-	if(IsControlDown(control))
-		*result = 1;
-
-	if(IsConsoleMode())
-		Console_Print("IsControlPressed %d >> %d", control, (int)*result);
-
-	return true;
-}
-
-// 1 the first time each script asks after the control went down, then 0 until it's released
-// and pressed again, as in classic
-static bool Cmd_OnControlDown_Execute(COMMAND_ARGS)
-{
-	static std::map <u32, std::set <u32>> s_reported;	// script form ID -> controls it has been told are down
-
-	*result = 0;
-
-	u32 control = 0;
-	if(!ExtractArgs(EXTRACT_ARGS, &control) || !script) return true;
-
-	// Script derives from TESForm
-	auto & reported = s_reported[reinterpret_cast <TESForm *>(script)->refID];
-
-	if(IsControlDown(control))
-	{
-		if(reported.insert(control).second)
-			*result = 1;
-	}
-	else
-		reported.erase(control);
-
-	return true;
-}
-
 // in Commands_Inventory.cpp
 extern CommandInfo kCommandInfo_GetBaseObject;
 extern CommandInfo kCommandInfo_GetObjectType;
@@ -201,120 +127,18 @@ extern CommandInfo kCommandInfo_sv_Destruct;
 extern CommandInfo kCommandInfo_SetEventHandler;
 extern CommandInfo kCommandInfo_RemoveEventHandler;
 
-// in Commands_Input.cpp, with OBSE64's own key commands
+// in Commands_Input.cpp
 extern CommandInfo kCommandInfo_GetNumKeysPressed;
 extern CommandInfo kCommandInfo_GetKeyPress;
+extern CommandInfo kCommandInfo_IsControlPressed;
+extern CommandInfo kCommandInfo_OnControlDown;
+extern CommandInfo kCommandInfo_DisableControl;
+extern CommandInfo kCommandInfo_EnableControl;
+extern CommandInfo kCommandInfo_TapControl;
 
 // in FunctionScripts.cpp, with the calls they make
 extern CommandInfo kCommandInfo_Call;
 extern CommandInfo kCommandInfo_SetFunctionValue;
-
-static CommandInfo kCommandInfo_IsControlPressed =
-{
-	"IsControlPressed", "",
-	0,
-	"returns true if the key or button assigned to control is pressed",
-	0,
-	1, kParams_OneInt,
-	Cmd_IsControlPressed_Execute
-};
-
-static CommandInfo kCommandInfo_OnControlDown =
-{
-	"OnControlDown", "",
-	0,
-	"returns true each time the key or button assigned to control is depressed",
-	0,
-	1, kParams_OneInt,
-	Cmd_OnControlDown_Execute
-};
-
-// Classic disabled and tapped the key a control was bound to. The Remastered's bindings are
-// Unreal's, so these act on the control itself, where it's one Unreal handles on its own
-// (PlayerControls.cpp): movement, Run (sprinting) and Always Run (the walk toggle), which is the
-// only one that can be tapped. For any other, they do nothing, and say so once.
-static void ReportControlCommand(const char * command, u32 control)
-{
-	static std::set <std::string> s_reported;
-
-	char key[64];
-	sprintf_s(key, "%s %u", command, control);
-
-	if(s_reported.insert(key).second)
-		_MESSAGE("%s %u: not supported for that control yet", command, control);
-}
-
-static bool Cmd_DisableControl_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-
-	u32 control = 0;
-	if(!ExtractArgs(EXTRACT_ARGS, &control)) return true;
-
-	if(!PlayerControls_SetDisabled(control, true))
-		ReportControlCommand("DisableControl", control);
-
-	return true;
-}
-
-static bool Cmd_EnableControl_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-
-	u32 control = 0;
-	if(!ExtractArgs(EXTRACT_ARGS, &control)) return true;
-
-	if(!PlayerControls_SetDisabled(control, false))
-		ReportControlCommand("EnableControl", control);
-
-	return true;
-}
-
-// 1 if the control was tapped
-static bool Cmd_TapControl_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-
-	u32 control = 0;
-	if(!ExtractArgs(EXTRACT_ARGS, &control)) return true;
-
-	if(PlayerControls_Tap(control))
-		*result = 1;
-	else
-		ReportControlCommand("TapControl", control);
-
-	return true;
-}
-
-static CommandInfo kCommandInfo_DisableControl =
-{
-	"DisableControl", "",
-	0,
-	"disables the key associated with the specified control",
-	0,
-	1, kParams_OneInt,
-	Cmd_DisableControl_Execute
-};
-
-static CommandInfo kCommandInfo_EnableControl =
-{
-	"EnableControl", "",
-	0,
-	"enables the key associated with the specified control",
-	0,
-	1, kParams_OneInt,
-	Cmd_EnableControl_Execute
-};
-
-static CommandInfo kCommandInfo_TapControl =
-{
-	"TapControl", "",
-	0,
-	"taps the key associated with the specified control",
-	0,
-	1, kParams_OneInt,
-	Cmd_TapControl_Execute
-};
 
 // debug output, switched on per mod by SetDebugMode
 static u32 s_modDebugStates[8];

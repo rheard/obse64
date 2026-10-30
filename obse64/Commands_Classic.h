@@ -37,7 +37,7 @@ void InstallGameLoadedHooks();
 // must not outlive the game it was made in (Commands_Game.cpp)
 u32 GetGameLoadCount();
 
-// whether a control (classic's number) is down in the game's controls
+// whether a control (classic's number) is down in the game's controls (Commands_Input.cpp)
 bool IsControlDown(u32 control);
 
 // whether a key (classic's DirectInput scan code, or from 256 a mouse button) is down while the
