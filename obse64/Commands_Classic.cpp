@@ -104,120 +104,6 @@ static bool Cmd_OnControlDown_Execute(COMMAND_ARGS)
 	return true;
 }
 
-// An actor base's flags: classic TESActorBaseData's, at +0x08 of that component (+0x48 in NPCs
-// and creatures). Despite their names, IsRefEssential and SetRefEssential work on the base, as
-// vanilla SetEssential does (0x06A18F20), which also marks the flags changed so a save keeps them.
-enum
-{
-	kActorBaseFlag_Essential =	0x02,
-	kActorBaseChanged_Flags =	0x10,
-};
-
-static u8 * GetActorBaseData(TESObjectREFR * refr)
-{
-	if(!refr || !refr->baseForm) return nullptr;
-
-	return (u8 *)Runtime_DynamicCast(refr->baseForm, RTTI_TESForm, RTTI_TESActorBaseData);
-}
-
-static bool Cmd_IsRefEssential_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-
-	if(u8 * data = GetActorBaseData(thisObj))
-	{
-		if(*(u32 *)(data + 0x08) & kActorBaseFlag_Essential)
-			*result = 1;
-	}
-
-	if(IsConsoleMode())
-		Console_Print("IsRefEssential >> %d", (int)*result);
-
-	return true;
-}
-
-static bool Cmd_SetRefEssential_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-
-	u32 essential = 0;
-	if(!ExtractArgs(EXTRACT_ARGS, &essential)) return true;
-
-	if(u8 * data = GetActorBaseData(thisObj))
-	{
-		u32 & flags = *(u32 *)(data + 0x08);
-		if(essential)
-			flags |= kActorBaseFlag_Essential;
-		else
-			flags &= ~kActorBaseFlag_Essential;
-
-		typedef void (* _MarkChanged)(void * component, u32 changeFlags);
-		auto markChanged = reinterpret_cast <_MarkChanged>((*(void ***)data)[0xA0 / 8]);
-		markChanged(data, kActorBaseChanged_Flags);
-	}
-
-	return true;
-}
-
-// An actor's spells, the player's included, are its base's TESSpellList (+0x98 in NPCs and
-// creatures), which AddSpell (0x0659F1D0) and RemoveSpell (0x065C5350) change: a list of
-// { form, next } nodes from +0x08, and the game's own check for one spell walks it (0x068869A0).
-// As classic, the leveled spell lists the base also has don't count.
-typedef bool (* _TESSpellList_HasSpell)(void * spellList, TESForm * spell);
-static RelocAddr <_TESSpellList_HasSpell> TESSpellList_HasSpell(0x068869A0);
-
-static bool Cmd_HasSpell_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-
-	TESForm * spell = nullptr;
-	if(!ExtractArgs(EXTRACT_ARGS, &spell)) return true;
-
-	if(spell && thisObj && thisObj->baseForm)
-	{
-		if(void * spellList = Runtime_DynamicCast(thisObj->baseForm, RTTI_TESForm, RTTI_TESSpellList))
-		{
-			if(TESSpellList_HasSpell(spellList, spell))
-				*result = 1;
-		}
-	}
-
-	if(IsConsoleMode())
-		Console_Print("HasSpell >> %d", (int)*result);
-
-	return true;
-}
-
-static CommandInfo kCommandInfo_HasSpell =
-{
-	"HasSpell", "hspl",
-	0,
-	"returns 1 if the actor has the spell",
-	1,
-	1, kParams_OneSpellItem,
-	Cmd_HasSpell_Execute
-};
-
-static CommandInfo kCommandInfo_IsRefEssential =
-{
-	"IsRefEssential", "",
-	0,
-	"returns 1 if the calling reference is essential",
-	1,
-	0, nullptr,
-	Cmd_IsRefEssential_Execute
-};
-
-static CommandInfo kCommandInfo_SetRefEssential =
-{
-	"SetRefEssential", "",
-	0,
-	"changes the calling reference to essential",
-	1,
-	1, kParams_OneInt,
-	Cmd_SetRefEssential_Execute
-};
-
 // in Commands_Inventory.cpp
 extern CommandInfo kCommandInfo_GetBaseObject;
 extern CommandInfo kCommandInfo_GetObjectType;
@@ -269,6 +155,15 @@ extern CommandInfo kCommandInfo_RemoveEquippedWeaponPoison;
 extern CommandInfo kCommandInfo_GetHotKeyItem;
 extern CommandInfo kCommandInfo_ClearHotKey;
 extern CommandInfo kCommandInfo_SetHotKeyItem;
+
+// in Commands_Actor.cpp
+extern CommandInfo kCommandInfo_IsRefEssential;
+extern CommandInfo kCommandInfo_SetRefEssential;
+extern CommandInfo kCommandInfo_HasSpell;
+
+// in Commands_Creature.cpp
+extern CommandInfo kCommandInfo_IsCreature;
+extern CommandInfo kCommandInfo_GetRider;
 
 // in Commands_MiscReference.cpp
 extern CommandInfo kCommandInfo_GetOwner;
@@ -417,104 +312,6 @@ static CommandInfo kCommandInfo_TapControl =
 	1, kParams_OneInt,
 	Cmd_TapControl_Execute
 };
-
-static ParamInfo kParams_OneOptionalActorBase[1] =
-{
-	{	"actor base", kParamType_ActorBase, 1 },
-};
-
-static bool Cmd_IsCreature_Execute(COMMAND_ARGS)
-{
-	return IsFormType_Execute(PASS_COMMAND_ARGS, kFormType_Creature, "IsCreature", false);
-}
-
-static CommandInfo kCommandInfo_IsCreature =
-{
-	"IsCreature", "",
-	0,
-	"returns 1 if the passed actor base is a creature",
-	0,
-	1, kParams_OneOptionalActorBase,
-	Cmd_IsCreature_Execute
-};
-
-// An actor keeps the horse it rides, and a horse its rider, at +0x288 (classic's horseOrRider):
-// Character's virtual function 0xF0 and Creature's 0xF2 return it, and IsRidingHorse asks them.
-enum
-{
-	kActorOffset_HorseOrRider =	0x288,
-};
-
-static bool Cmd_GetRider_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-
-	u8 * horse = thisObj ? (u8 *)Runtime_DynamicCast(thisObj, RTTI_TESObjectREFR, RTTI_Creature) : nullptr;
-	auto * rider = horse ? *(TESObjectREFR **)(horse + kActorOffset_HorseOrRider) : nullptr;
-	if(rider)
-		SetFormResult(result, rider->refID);
-
-	if(IsConsoleMode())
-		Console_Print("GetRider >> %08X", rider ? rider->refID : 0);
-
-	return true;
-}
-
-static CommandInfo kCommandInfo_GetRider =
-{
-	"GetRider", "",
-	0,
-	"returns a reference to the actor currently riding the calling horse",
-	1,
-	0, nullptr,
-	Cmd_GetRider_Execute
-};
-
-// The game's IsRunning reads an actor's movement flags. Classic set the player's running flag
-// whenever Always Run was on (or Run held), moving or not, and mods ask IsRunning whether the
-// player runs: No Backwards Running does, to know whether to switch to walking as the player backs
-// up. The Remastered's flags for the player come from Unreal, and say running only while moving at
-// a run. So for the player on foot, IsRunning in scripts answers as classic did, from Unreal's walk
-// toggle and sprinting (PlayerControls.cpp); other actors, the player on a horse, and the game's
-// conditions get the game's answer.
-enum
-{
-	kOpcode_IsRunning =	0x111F,
-};
-
-static ExecuteFunction s_isRunning = nullptr;
-
-static bool Cmd_IsRunning_Execute(COMMAND_ARGS)
-{
-	auto * player = reinterpret_cast <TESObjectREFR *>(PlayerCharacter::Get());
-	bool running = false;
-
-	if(thisObj && thisObj == player && !*(TESObjectREFR **)((u8 *)player + kActorOffset_HorseOrRider) &&
-		PlayerControls_GetRunning(&running))
-	{
-		*result = running ? 1 : 0;
-
-		if(IsConsoleMode())
-			Console_Print(running ? "%s is running" : "%s is not running", GetFullName(player));
-
-		return true;
-	}
-
-	return s_isRunning(PASS_COMMAND_ARGS);
-}
-
-static void InstallIsRunning()
-{
-	CommandInfo * info = GetCommandInfo(kOpcode_IsRunning);
-	if(!info || !info->execute)
-	{
-		_ERROR("IsRunning isn't where expected; it keeps the game's answer for the player");
-		return;
-	}
-
-	s_isRunning = info->execute;
-	info->execute = Cmd_IsRunning_Execute;
-}
 
 enum
 {

@@ -5,6 +5,7 @@
 #include "GameBSExtraData.h"
 #include "AltarSync.h"
 #include "obse64_common/Utilities.h"
+#include <cstddef>
 
 class NiNode;
 class BaseProcess;
@@ -280,10 +281,17 @@ public:
 	virtual void Unk_10E();
 	virtual void Unk_10F();
 
-	u64	unk148[(0x318 - 0x148) / 8];
+	u64		unk148[(0x288 - 0x148) / 8];	// 148
+
+	// the horse it rides, or a horse's rider (classic's horseOrRider): Character's virtual function
+	// 0xF0 and Creature's 0xF2 return it, and IsRidingHorse asks them
+	Actor	* horseOrRider;					// 288
+
+	u64		unk290[(0x318 - 0x290) / 8];	// 290
 };
 
 static_assert(sizeof(Actor) == 0x318);
+static_assert(offsetof(Actor, horseOrRider) == 0x288);
 
 // 328
 class Character : public Actor

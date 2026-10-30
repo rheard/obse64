@@ -23,6 +23,10 @@ bool IsFormType_Execute(COMMAND_ARGS, u8 typeID, const char * name, bool anyForm
 // (Commands_Inventory.cpp)
 void InstallItemMessageHook();
 
+// makes the game's IsRunning answer as classic's did for the player on foot
+// (Commands_Player.cpp)
+void InstallIsRunning();
+
 // notes each save loaded and new game started, for GetGameLoaded (Commands_Game.cpp)
 void InstallGameLoadedHooks();
 
