@@ -162,6 +162,15 @@ extern RelocAddr <_ScriptLocals_GetVariableValue> ScriptLocals_GetVariableValue;
 typedef void * (* _Script_GetResolvedRefVariable)(Script * script, u32 refIdx, ScriptLocals * locals);
 extern RelocAddr <_Script_GetResolvedRefVariable> Script_GetResolvedRefVariable;
 
+// Classic's ExtractArgsEx: reads a command's arguments as ExtractArgs does (0x06630750), but takes
+// any form for a form parameter. ExtractArgs checks the form against the parameter's type, and an
+// inventory object has to be one an inventory can hold: no door, container or actor, nor any
+// reference, even to an item. Classic read some commands' arguments this way, so mods give them
+// those. Strings, integers, floats and the values ExtractArgs reads as a u16 are read as it reads
+// them; any other parameter is taken to be a form.
+bool ExtractArgsAnyForm(const ParamInfo * paramInfo, const char * scriptData, u32 * opcodeOffsetPtr,
+	TESObjectREFR * thisObj, TESObjectREFR * containingObj, Script * script, ScriptLocals * locals, ...);
+
 #define COMMAND_ARGS		const ParamInfo * paramInfo, const char * scriptData, TESObjectREFR * thisObj, TESObjectREFR * containingObj, Script * script, ScriptLocals * locals, double * result, u32 * opcodeOffsetPtr
 #define PASS_COMMAND_ARGS	paramInfo, scriptData, thisObj, containingObj, script, locals, result, opcodeOffsetPtr
 #define EXTRACT_ARGS		paramInfo, scriptData, opcodeOffsetPtr, thisObj, containingObj, script, locals

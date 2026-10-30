@@ -89,7 +89,7 @@ static bool Cmd_GetObjectType_Execute(COMMAND_ARGS)
 	*result = 0;
 
 	TESForm * form = nullptr;
-	if(!ExtractArgs(EXTRACT_ARGS, &form)) return true;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &form)) return true;
 
 	form = FormArgOrBase(form, thisObj);
 	if(form)
@@ -101,12 +101,17 @@ static bool Cmd_GetObjectType_Execute(COMMAND_ARGS)
 	return true;
 }
 
-static bool IsFormType_Execute(COMMAND_ARGS, u8 typeID, const char * name)
+// With anyForm, the argument may be any form, as classic took for IsWeapon and the rest of that
+// family; IsCreature's it read as the game does, so an actor base only.
+static bool IsFormType_Execute(COMMAND_ARGS, u8 typeID, const char * name, bool anyForm)
 {
 	*result = 0;
 
 	TESForm * form = nullptr;
-	ExtractArgs(EXTRACT_ARGS, &form);
+	if(anyForm)
+		ExtractArgsAnyForm(EXTRACT_ARGS, &form);
+	else
+		ExtractArgs(EXTRACT_ARGS, &form);
 
 	form = FormArgOrBase(form, thisObj);
 	if(form && form->typeID == typeID)
@@ -334,7 +339,7 @@ static bool Cmd_GetGoldValue_Execute(COMMAND_ARGS)
 	*result = 0;
 
 	TESForm * form = nullptr;
-	if(!ExtractArgs(EXTRACT_ARGS, &form)) return true;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &form)) return true;
 
 	form = FormArgOrBase(form, thisObj);
 	if(form)
@@ -357,7 +362,7 @@ static bool Cmd_IsQuestItem_Execute(COMMAND_ARGS)
 	*result = 0;
 
 	TESForm * form = nullptr;
-	if(!ExtractArgs(EXTRACT_ARGS, &form)) return true;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &form)) return true;
 
 	form = FormArgOrBase(form, thisObj);
 	if(form && form->IsQuestItem())
@@ -375,7 +380,7 @@ static bool Cmd_SetQuestItem_Execute(COMMAND_ARGS)
 
 	u32 questItem = 0;
 	TESForm * form = nullptr;
-	if(!ExtractArgs(EXTRACT_ARGS, &questItem, &form)) return true;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &questItem, &form)) return true;
 
 	form = FormArgOrBase(form, thisObj);
 	if(form)
@@ -412,7 +417,7 @@ static bool ComparePath_Execute(COMMAND_ARGS, bool maleGround, const char * name
 
 	char text[BUFSIZ] = { 0 };
 	TESForm * form = nullptr;
-	if(!ExtractArgs(EXTRACT_ARGS, &text, &form)) return true;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &text, &form)) return true;
 
 	BSStringT * path = ModelPathOf(FormArgOrBase(form, thisObj), maleGround);
 	if(path && path->m_data && *text)
@@ -437,7 +442,7 @@ static bool CopyPath_Execute(COMMAND_ARGS, bool maleGround)
 
 	TESForm * src = nullptr;
 	TESForm * dest = nullptr;
-	if(!ExtractArgs(EXTRACT_ARGS, &src, &dest)) return true;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &src, &dest)) return true;
 
 	BSStringT * srcPath = ModelPathOf(FormArgOrBase(src, nullptr), maleGround);
 	BSStringT * destPath = ModelPathOf(FormArgOrBase(dest, thisObj), maleGround);
@@ -812,7 +817,7 @@ static CommandInfo kCommandInfo_GetObjectType =
 #define IS_FORM_TYPE(name, type, what)													\
 	static bool Cmd_##name##_Execute(COMMAND_ARGS)										\
 	{																					\
-		return IsFormType_Execute(PASS_COMMAND_ARGS, kFormType_##type, #name);			\
+		return IsFormType_Execute(PASS_COMMAND_ARGS, kFormType_##type, #name, true);	\
 	}																					\
 																						\
 	static CommandInfo kCommandInfo_##name =											\
@@ -853,7 +858,7 @@ static ParamInfo kParams_OneOptionalActorBase[1] =
 
 static bool Cmd_IsCreature_Execute(COMMAND_ARGS)
 {
-	return IsFormType_Execute(PASS_COMMAND_ARGS, kFormType_Creature, "IsCreature");
+	return IsFormType_Execute(PASS_COMMAND_ARGS, kFormType_Creature, "IsCreature", false);
 }
 
 static CommandInfo kCommandInfo_IsCreature =

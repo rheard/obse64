@@ -463,7 +463,7 @@ static bool Cmd_GetObjectCharge_Execute(COMMAND_ARGS)
 	*result = 0;
 
 	TESForm * form = nullptr;
-	if(!ExtractArgs(EXTRACT_ARGS, &form)) return true;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &form)) return true;
 
 	// a reference stands for its base object, and no argument for the calling reference's
 	if(auto * refr = form ? DYNAMIC_CAST(form, TESForm, TESObjectREFR) : nullptr)
@@ -676,7 +676,7 @@ static bool Cmd_GetObjectHealth_Execute(COMMAND_ARGS)
 	*result = 0;
 
 	TESForm * form = nullptr;
-	if(!ExtractArgs(EXTRACT_ARGS, &form)) return true;
+	if(!ExtractArgsAnyForm(EXTRACT_ARGS, &form)) return true;
 
 	// a reference stands for its base object, and no argument for the calling reference's
 	if(auto * refr = form ? DYNAMIC_CAST(form, TESForm, TESObjectREFR) : nullptr)
