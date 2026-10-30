@@ -974,8 +974,7 @@ static u8 * GetMenuByType(u32 menuType)
 // changes (0x06775DA0, which sends Unreal the new list); RemoveSpell doesn't touch it. A click
 // rebuilds the list before the click handler reports the hover, so the hovered index is read in
 // the new list; but after a rebuild with no hover since, the hovered row can hold another spell,
-// so the selection is only given while the list still has the same node, with the same spell, at
-// the hovered index.
+// so the selection is only given while the list still has the same spell at the hovered index.
 typedef void (* _MagicMenu_Hover)(u8 * menu, s32 index);
 static RelocAddr <_MagicMenu_Hover> MagicMenu_Hover(0x06774440);
 static RelocAddr <uintptr_t> kMagicMenuHover_HoverCall(0x0656F4C1);
@@ -999,7 +998,7 @@ struct MagicMenuListNode
 
 static u8 * s_hoveredMagicMenu = nullptr;
 static s32 s_hoveredMagicIndex = 0;
-static MagicMenuListNode * s_hoveredMagicNode = nullptr;
+static TESForm * s_hoveredMagicSpell = nullptr;	// only compared, never read
 static u32 s_hoveredMagicSpellID = 0;
 
 // An item of the magic menu, read as its details are (0x06775570): an item of kind 8 is a scroll
@@ -1036,7 +1035,7 @@ static void MagicMenu_Hover_Hook(u8 * menu, s32 index)
 
 	s_hoveredMagicMenu = menu;
 	s_hoveredMagicIndex = index;
-	s_hoveredMagicNode = spell ? node : nullptr;
+	s_hoveredMagicSpell = spell ? node->data : nullptr;
 	s_hoveredMagicSpellID = spell ? node->data->refID : 0;
 }
 
@@ -1047,14 +1046,17 @@ static u8 * MagicMenu_Construct_Hook(u8 * menu)
 	return MagicMenu_Construct(menu);
 }
 
-// The hovered spell's form ID, while the list still holds it where it was hovered. The ID kept
-// from the hover is given, so a spell freed since isn't read.
+// The hovered spell's form ID, while the list still holds that spell where it was hovered. The
+// spell is compared by its address, not its node, since the first row's node is the menu's own
+// whatever spell it holds; and the ID kept from the hover is given, so a spell freed since isn't
+// read.
 static u32 GetMagicMenuSelection()
 {
 	u8 * menu = GetMenuByType(kMenuType_Magic);
-	if(!menu || menu != s_hoveredMagicMenu || !menu[0xAC] || !s_hoveredMagicNode) return 0;
+	if(!menu || menu != s_hoveredMagicMenu || !menu[0xAC] || !s_hoveredMagicSpell) return 0;
 
-	if(GetMagicMenuSpellNode(menu, s_hoveredMagicIndex) != s_hoveredMagicNode) return 0;
+	MagicMenuListNode * node = GetMagicMenuSpellNode(menu, s_hoveredMagicIndex);
+	if(!node || node->data != s_hoveredMagicSpell) return 0;
 
 	return s_hoveredMagicSpellID;
 }
