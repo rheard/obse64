@@ -1,6 +1,7 @@
 #include "Log.h"
 #include "Errors.h"
 #include "FileStream.h"
+#include <cstring>
 #include <share.h>
 #include <shlobj.h>
 
@@ -41,8 +42,18 @@ void DebugLog::log(LogLevel level, const char * fmt, va_list args)
 
 	if(toFile || toConsole)
 	{
-		vsprintf_s(s_formatBuf, sizeof(s_formatBuf), fmt, args);
-		strcat_s(s_formatBuf, sizeof(s_formatBuf), "\n");
+		// a line too long for the buffer is cut short, ending "...", where vsprintf_s would end
+		// the program (a script printing a long string variable reached that)
+		int len = _vsnprintf_s(s_formatBuf, sizeof(s_formatBuf) - 1, _TRUNCATE, fmt, args);
+		if(len < 0)
+		{
+			len = int(strlen(s_formatBuf));
+			if(len >= 3)
+				memcpy(s_formatBuf + len - 3, "...", 3);
+		}
+
+		s_formatBuf[len] = '\n';
+		s_formatBuf[len + 1] = 0;
 	}
 
 	if(toFile && s_log)
