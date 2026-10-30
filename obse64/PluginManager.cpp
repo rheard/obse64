@@ -6,10 +6,10 @@
 #include "obse64_common/BranchTrampoline.h"
 #include "obse64_common/Log.h"
 #include "obse64_common/Errors.h"
+#include <algorithm>
 
 PluginManager	g_pluginManager;
 
-PluginManager::LoadedPlugin *	PluginManager::s_currentLoadingPlugin = nullptr;
 PluginHandle					PluginManager::s_currentPluginHandle = 0;
 u32								s_trampolineLog = 1;
 
@@ -102,7 +102,6 @@ void PluginManager::installPlugins(u32 phase)
 
 		_MESSAGE("%sloading plugin \"%s\"", (phase == kPhase_Preload) ? "pre" : "", plugin.version.name);
 
-		s_currentLoadingPlugin = &plugin;
 		s_currentPluginHandle = plugin.internalHandle;
 
 		std::string pluginPath = m_pluginDirectory + plugin.dllName;
@@ -119,7 +118,7 @@ void PluginManager::installPlugins(u32 phase)
 		if(plugin.handle)
 		{
 			plugin.load[phase] = (_OBSEPlugin_Load)GetProcAddress(plugin.handle, (phase == kPhase_Preload) ? "OBSEPlugin_Preload" : "OBSEPlugin_Load");
-			if(plugin.load)
+			if(plugin.load[phase])
 			{
 				const char * loadStatus = nullptr;
 
@@ -142,7 +141,10 @@ void PluginManager::installPlugins(u32 phase)
 
 		if(!success)
 		{
-			// failed, unload the library
+			// failed: drop the message handlers it registered, which would be called in its unloaded code
+			removeListeners(plugin.internalHandle);
+
+			// unload the library
 			if(plugin.handle) FreeLibrary(plugin.handle);
 
 			// and remove from plugins list
@@ -154,7 +156,6 @@ void PluginManager::installPlugins(u32 phase)
 
 	}
 
-	s_currentLoadingPlugin = nullptr;
 	s_currentPluginHandle = 0;
 }
 
@@ -217,22 +218,16 @@ const PluginInfo * PluginManager::infoByName(const char * name) const
 	return nullptr;
 }
 
-u32 PluginManager::numPlugins() const
-{
-	u32	result = (u32)m_plugins.size();
-
-	// is one currently loading?
-	if(s_currentLoadingPlugin) result++;
-
-	return result;
-}
-
 const char * PluginManager::pluginNameFromHandle(PluginHandle handle) const
 {
-	if(handle > 0 && handle <= m_plugins.size())
-		return (m_plugins[handle - 1].version.name);
-	else if(handle == 0)
+	if(handle == 0)
 		return "OBSE";
+
+	for(LoadedPluginList::const_iterator iter = m_plugins.begin(); iter != m_plugins.end(); ++iter)
+	{
+		if(iter->internalHandle == handle)
+			return iter->version.name;
+	}
 
 	return nullptr;
 }
@@ -242,15 +237,13 @@ PluginHandle PluginManager::lookupHandleFromName(const char * pluginName) const
 	if(!_stricmp("OBSE", pluginName))
 		return 0;
 
-	u32	idx = 1;
 	for(LoadedPluginList::const_iterator iter = m_plugins.begin(); iter != m_plugins.end(); ++iter)
 	{
 		const LoadedPlugin * plugin = &(*iter);
 		if(!_stricmp(plugin->version.name, pluginName))
 		{
-			return idx;
+			return plugin->internalHandle;
 		}
-		idx++;
 	}
 	return kPluginHandle_Invalid;
 }
@@ -318,8 +311,6 @@ void PluginManager::scanPlugins(void)
 {
 	_MESSAGE("scanning plugin directory %s", m_pluginDirectory.c_str());
 
-	u32 handleIdx = 1;	// start at 1, 0 is reserved for internal use
-
 	for(DirectoryIterator iter(m_pluginDirectory.c_str(), "*.dll"); !iter.done(); iter.next())
 	{
 		std::string	pluginPath = iter.fullPath();
@@ -345,8 +336,7 @@ void PluginManager::scanPlugins(void)
 					{
 						// compatible, add to list
 
-						plugin.internalHandle = handleIdx;
-						handleIdx++;
+						plugin.internalHandle = m_nextHandle++;
 
 						plugin.hasLoad = getResourceLibraryProcAddress(resourceHandle, "OBSEPlugin_Load") != nullptr;
 						plugin.hasPreload = getResourceLibraryProcAddress(resourceHandle, "OBSEPlugin_Preload") != nullptr;
@@ -698,17 +688,16 @@ static PluginListeners s_pluginListeners;
 
 bool PluginManager::registerListener(PluginHandle listener, const char* sender, OBSEMessagingInterface::EventCallback handler)
 {
-	// because this can be called while plugins are loading, gotta make sure number of plugins hasn't increased
-	u32 numPlugins = g_pluginManager.numPlugins() + 1;
-	if (s_pluginListeners.size() < numPlugins)
+	// a list for each sender, by handle, for every handle given out
+	if (s_pluginListeners.size() < g_pluginManager.m_nextHandle)
 	{
-		s_pluginListeners.resize(numPlugins + 5);	// add some extra room to avoid unnecessary re-alloc
+		s_pluginListeners.resize(g_pluginManager.m_nextHandle);
 	}
 
-	_MESSAGE("registering plugin listener for %s at %u of %u", sender, listener, numPlugins);
+	_MESSAGE("registering plugin listener for %s at %u", sender, listener);
 
-	// handle > num plugins = invalid
-	if (listener > g_pluginManager.numPlugins() || !handler) 
+	// the listener has to be OBSE or a plugin that's loaded or loading
+	if (!g_pluginManager.pluginNameFromHandle(listener) || !handler)
 	{
 		return false;
 	}
@@ -771,6 +760,15 @@ bool PluginManager::registerListener(PluginHandle listener, const char* sender, 
 	}
 
 	return true;
+}
+
+void PluginManager::removeListeners(PluginHandle listener)
+{
+	for (auto & listeners : s_pluginListeners)
+	{
+		listeners.erase(std::remove_if(listeners.begin(), listeners.end(),
+			[listener](const PluginListener & entry) { return entry.listener == listener; }), listeners.end());
+	}
 }
 
 bool PluginManager::dispatchMessage(PluginHandle sender, u32 messageType, void * data, u32 dataLen, const char* receiver)

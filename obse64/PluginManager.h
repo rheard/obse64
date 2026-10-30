@@ -30,7 +30,6 @@ public:
 	void	deinit();
 
 	const PluginInfo *	infoByName(const char * name) const;
-	u32					numPlugins() const;
 
 	const char *	pluginNameFromHandle(PluginHandle handle) const;
 	PluginHandle	lookupHandleFromName(const char * pluginName) const;
@@ -80,6 +79,9 @@ private:
 	void			reportPluginErrors();
 	void			updateAddressLibraryPrompt();
 
+	// takes a plugin's message handlers out of every sender's list, before it's unloaded
+	static void		removeListeners(PluginHandle listener);
+
 	typedef std::vector <LoadedPlugin>	LoadedPluginList;
 
 	std::string			m_pluginDirectory;
@@ -87,9 +89,12 @@ private:
 
 	LoadedPluginList	m_erroredPlugins;
 
+	// A plugin keeps the handle it's given here, in scan order, for good: one that fails to load
+	// leaves the list, so its handle is no guide to where the others are in it.
+	PluginHandle		m_nextHandle = 1;	// 0 is OBSE's own
+
 	bool				m_oldAddressLibrary = false;
 
-	static LoadedPlugin		* s_currentLoadingPlugin;
 	static PluginHandle		s_currentPluginHandle;
 };
 
