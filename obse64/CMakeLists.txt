@@ -153,6 +153,7 @@ source_group(
 		Commands_Actor.cpp
 		Commands_Creature.cpp
 		Commands_Game.cpp
+		Commands_Menu.cpp
 		Commands_String.cpp
 		Commands_Events.cpp
 		Commands_Loops.cpp

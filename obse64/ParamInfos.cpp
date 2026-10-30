@@ -25,3 +25,8 @@ ParamInfo kParams_OneOptionalInventoryObject[1] =
 {
 	{	"inventory object", kParamType_InventoryObject, 1 },
 };
+
+ParamInfo kParams_OneOptionalInt[1] =
+{
+	{	"int", kParamType_Integer, 1 },
+};

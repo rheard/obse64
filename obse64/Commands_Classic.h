@@ -27,6 +27,9 @@ void InstallItemMessageHook();
 // (Commands_Player.cpp)
 void InstallIsRunning();
 
+// notes the item the magic menu shows, for GetActiveMenuSelection (Commands_Menu.cpp)
+void InstallMagicMenuHooks();
+
 // notes each save loaded and new game started, for GetGameLoaded (Commands_Game.cpp)
 void InstallGameLoadedHooks();
 
