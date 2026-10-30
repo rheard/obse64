@@ -168,27 +168,46 @@ const void * getResourceLibraryProcAddress(const void * module, const char * exp
 	auto * base = (const u8 *)(uintptr_t(module) & ~3);
 	auto * dosHeader = (const IMAGE_DOS_HEADER *)base;
 	auto * ntHeader = (const IMAGE_NT_HEADERS *)(base + dosHeader->e_lfanew);
-	auto * exportTable =
-		(const IMAGE_EXPORT_DIRECTORY *)(base + ntHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+
+	// Everything read must lie in the image, and an RVA of 0 is the DOS header: a DLL that exports
+	// nothing has no export directory, and reading one there faults on its first name.
+	u64 imageSize = ntHeader->OptionalHeader.SizeOfImage;
+	auto inImage = [imageSize](u64 rva, u64 size) { return rva && (rva + size <= imageSize); };
+
+	const auto & exportDirectory = ntHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+	if(!inImage(exportDirectory.VirtualAddress, sizeof(IMAGE_EXPORT_DIRECTORY)))
+		return nullptr;
+
+	auto * exportTable = (const IMAGE_EXPORT_DIRECTORY *)(base + exportDirectory.VirtualAddress);
+	u32 numNames = exportTable->NumberOfNames;
+	u32 numFunctions = exportTable->NumberOfFunctions;
+
+	if(	!inImage(exportTable->AddressOfFunctions, u64(numFunctions) * sizeof(u32)) ||
+		!inImage(exportTable->AddressOfNameOrdinals, u64(numNames) * sizeof(u16)) ||
+		!inImage(exportTable->AddressOfNames, u64(numNames) * sizeof(u32)))
+		return nullptr;
 
 	auto * exportAddresses = (const u32 *)(base + exportTable->AddressOfFunctions);	// RVA array
 	auto * exportNameOrdinals = (const u16 *)(base + exportTable->AddressOfNameOrdinals);	// index in to exportAddresses
 	auto * exportNames = (const u32 *)(base + exportTable->AddressOfNames);	// RVA array
 
+	// names are compared with their terminator, so a longer name doesn't match
+	size_t exportNameSize = strlen(exportName) + 1;
+
 	const void * result = nullptr;
 
-	for(u32 i = 0; i < exportTable->NumberOfNames; i++)
+	for(u32 i = 0; i < numNames; i++)
 	{
 		u32 nameRVA = exportNames[i];
-		auto * name = (const char *)(base + nameRVA);
 
-		if(!strcmp(exportName, name))
+		if(inImage(nameRVA, exportNameSize) && !memcmp(base + nameRVA, exportName, exportNameSize))
 		{
 			u32 addrIdx = exportNameOrdinals[i];
-			if(addrIdx < exportTable->NumberOfFunctions)
+			if(addrIdx < numFunctions)
 			{
 				u32 addrRVA = exportAddresses[addrIdx];
-				result = (const void *)(base + addrRVA);
+				if(inImage(addrRVA, 1))
+					result = (const void *)(base + addrRVA);
 
 				break;
 			}
