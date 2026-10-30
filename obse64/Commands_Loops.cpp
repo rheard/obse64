@@ -18,8 +18,9 @@
 // Continue. ForEach's argument is classic's expression `iterator <- container`, after the offset of
 // the statement past the loop's Loop, which classic's compiler writes there once it reaches Loop.
 // They jump the way Goto does (Commands_Classic.cpp), putting back the if/else nesting the loop
-// started with, so they work as statements of their own in a script the game runs itself. While,
-// whose condition needs the evaluator's operators, isn't ported yet.
+// started with, in the runner running the script, so they work as statements of their own in any
+// script, a function Call runs included. While, whose condition needs the evaluator's operators,
+// isn't ported yet.
 //
 // The iterator holds an inventory reference for each stack in turn (InventoryReference.cpp), made
 // when the loop starts and destroyed when it ends, as in classic, and is 0 after the loop. A stack
@@ -141,9 +142,9 @@ static bool Cmd_ForEach_Execute(COMMAND_ARGS)
 
 	ScriptRunner * runner = nullptr;
 	s32 * length = nullptr;
-	if(!GetStatementState(returnAddress, script, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
+	if(!GetStatementState(returnAddress, script, locals, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
 	{
-		ReportLoopError("ForEach", script, "loops only work as statements of their own, in a script the game runs itself");
+		ReportLoopError("ForEach", script, "loops only work as statements of their own");
 		return false;
 	}
 
@@ -218,9 +219,9 @@ static bool NextIteration(const char * name, COMMAND_ARGS, void * returnAddress)
 
 	ScriptRunner * runner = nullptr;
 	s32 * length = nullptr;
-	if(!GetStatementState(returnAddress, script, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
+	if(!GetStatementState(returnAddress, script, locals, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
 	{
-		ReportLoopError(name, script, "loops only work as statements of their own, in a script the game runs itself");
+		ReportLoopError(name, script, "loops only work as statements of their own");
 		return false;
 	}
 
@@ -263,9 +264,9 @@ static bool Cmd_Break_Execute(COMMAND_ARGS)
 
 	ScriptRunner * runner = nullptr;
 	s32 * length = nullptr;
-	if(!GetStatementState(returnAddress, script, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
+	if(!GetStatementState(returnAddress, script, locals, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
 	{
-		ReportLoopError("Break", script, "loops only work as statements of their own, in a script the game runs itself");
+		ReportLoopError("Break", script, "loops only work as statements of their own");
 		return false;
 	}
 

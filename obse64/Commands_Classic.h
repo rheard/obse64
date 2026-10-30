@@ -40,16 +40,21 @@ void UpdateKeyInput();
 // The game's script runner (0xC0 bytes, built by 0x0694C7C0). ScriptRunner::Run (0x0694D6D0) steps
 // through a script's statements and has 0x0694C810 run each one. The runner keeps the if/else
 // nesting: a depth, and for each level 1 while inside an if and 2 once one of its branches ran.
+// Nothing bounds the depth: an If past the tenth level writes past ifStack.
 struct ScriptRunner
 {
-	u8		unk00[0x28];	// 00
-	Script	* script;		// 28 the script running, 0 when idle
-	u32		unk30;			// 30
-	u32		unk34;			// 34
-	s32		ifDepth;		// 38
-	u32		ifStack[10];	// 3C
+	TESObjectREFR	* containingObj;	// 00
+	u64				unk08;				// 08
+	ScriptLocals	* locals;			// 10 the locals the script runs with, which its commands are given
+	u8				unk18[0x10];		// 18
+	Script			* script;			// 28 the script running, 0 when idle
+	u32				unk30;				// 30
+	u32				unk34;				// 34
+	s32				ifDepth;			// 38
+	u32				ifStack[10];		// 3C
 };
 
+static_assert(offsetof(ScriptRunner, locals) == 0x10);
 static_assert(offsetof(ScriptRunner, script) == 0x28);
 static_assert(offsetof(ScriptRunner, ifDepth) == 0x38);
 static_assert(offsetof(ScriptRunner, ifStack) == 0x3C);
@@ -60,10 +65,11 @@ bool IsStatementCall(void * returnAddress);
 
 // The runner running this statement, and Run's length for it, which the command can change to
 // jump: the next statement is at argsOffset + *length (Commands_Classic.cpp, with Goto). False
-// unless the command is a statement of its own run by the main runner: not part of an expression,
-// nor in a script that another one started. returnAddress is the command's _ReturnAddress().
-bool GetStatementState(void * returnAddress, Script * script, const char * scriptData, u32 argsOffset,
-	u32 * opcodeOffsetPtr, ScriptRunner ** runner, s32 ** length);
+// unless the command is a statement of its own, not part of an expression, run by the innermost
+// runner running, with this script and these locals. returnAddress is the command's
+// _ReturnAddress().
+bool GetStatementState(void * returnAddress, Script * script, ScriptLocals * locals, const char * scriptData,
+	u32 argsOffset, u32 * opcodeOffsetPtr, ScriptRunner ** runner, s32 ** length);
 
 // ends the loops scripts left unfinished, as at the start of each frame and when a game is loaded
 // (Commands_Loops.cpp)

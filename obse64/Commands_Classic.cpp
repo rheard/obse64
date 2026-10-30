@@ -2413,6 +2413,43 @@ static bool Cmd_FileExists_Execute(COMMAND_ARGS)
 // the runner Run's callers use, unless it's busy with another script (0x0694D580)
 static RelocPtr <ScriptRunner *> g_scriptRunner(0x094904E8);
 
+// The runners running a script on this thread, innermost last. Run's caller (0x0694D580) gives it
+// the main runner, or a new one when that's busy, as for a function a script calls or a script
+// that an Activate starts, and both calls (0x0694D6A8 and 0x0694D645) go through a hook that notes
+// the runner while it runs. Run's last five arguments, on the stack, are passed on as they are.
+typedef u64 (* _ScriptRunner_Run)(ScriptRunner * runner, void * arg2, void * arg3, void * arg4, u64 arg5,
+	u64 arg6, u64 arg7, u64 arg8, u64 arg9);
+static RelocAddr <_ScriptRunner_Run> ScriptRunner_Run(0x0694D6D0);
+static RelocAddr <uintptr_t> kRun_MainRunnerCall(0x0694D6A8);
+static RelocAddr <uintptr_t> kRun_NewRunnerCall(0x0694D645);
+
+static thread_local std::vector <ScriptRunner *> s_runners;
+static bool s_runnersNoted = false;
+
+static u64 ScriptRunner_Run_Hook(ScriptRunner * runner, void * arg2, void * arg3, void * arg4, u64 arg5,
+	u64 arg6, u64 arg7, u64 arg8, u64 arg9)
+{
+	s_runners.push_back(runner);
+	u64 result = ScriptRunner_Run(runner, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+	s_runners.pop_back();
+
+	return result;
+}
+
+static void InstallRunnerHooks()
+{
+	uintptr_t run = ScriptRunner_Run.getUIntPtr();
+	if(!IsCallTo(kRun_MainRunnerCall.getUIntPtr(), run) || !IsCallTo(kRun_NewRunnerCall.getUIntPtr(), run))
+	{
+		_ERROR("the script runner's calls aren't where expected; Goto and loops will work only in scripts the main runner runs");
+		return;
+	}
+
+	g_branchTrampoline.write5Call(kRun_MainRunnerCall.getUIntPtr(), uintptr_t(ScriptRunner_Run_Hook));
+	g_branchTrampoline.write5Call(kRun_NewRunnerCall.getUIntPtr(), uintptr_t(ScriptRunner_Run_Hook));
+	s_runnersNoted = true;
+}
+
 // Run moves to the next statement by adding the statement's length to its arguments' offset. It
 // passes the length to 0x0694C810 by pointer, as the fifth argument, which a command can change to
 // jump, as classic's Goto did. 0x0694C810 calls commands from 0x0694D179 with opcodeOffsetPtr at its
@@ -2436,13 +2473,21 @@ bool IsStatementCall(void * returnAddress)
 	return uintptr_t(returnAddress) == kStatementCommandReturn.getUIntPtr();
 }
 
-bool GetStatementState(void * returnAddress, Script * script, const char * scriptData, u32 argsOffset,
-	u32 * opcodeOffsetPtr, ScriptRunner ** runner, s32 ** length)
+bool GetStatementState(void * returnAddress, Script * script, ScriptLocals * locals, const char * scriptData,
+	u32 argsOffset, u32 * opcodeOffsetPtr, ScriptRunner ** runner, s32 ** length)
 {
 	if(!IsStatementCall(returnAddress)) return false;
 
-	*runner = *g_scriptRunner;
-	if(!*runner || (*runner)->script != script) return false;
+	// The innermost runner, or without the hooks the main one. The main runner can be running this
+	// script while another runner runs it too, inside that run (a function calling itself, a
+	// script activating another reference with the same script), and putting its nesting back
+	// there would leave the inner runner's to grow past its ten levels: so the locals must match.
+	if(s_runnersNoted)
+		*runner = s_runners.empty() ? nullptr : s_runners.back();
+	else
+		*runner = *g_scriptRunner;
+
+	if(!*runner || (*runner)->script != script || (*runner)->locals != locals) return false;
 
 	// the length Run read, which is just before the arguments
 	*length = *(s32 **)((u8 *)opcodeOffsetPtr + kNextStatementLengthOffset);
@@ -2455,7 +2500,7 @@ static void ReportUnfollowedJump(const char * name, Script * script)
 	if(!s_reported)
 	{
 		s_reported = true;
-		_MESSAGE("%s in script %08X ignored: it only works as a statement of its own, in a script the game runs itself",
+		_MESSAGE("%s in script %08X ignored: it only works as a statement of its own",
 			name, script ? reinterpret_cast <TESForm *>(script)->refID : 0);
 	}
 }
@@ -2472,7 +2517,7 @@ static bool Cmd_SaveIP_Execute(COMMAND_ARGS)
 
 	ScriptRunner * runner = nullptr;
 	s32 * length = nullptr;
-	if(!GetStatementState(returnAddress, script, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
+	if(!GetStatementState(returnAddress, script, locals, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
 	{
 		ReportUnfollowedJump("Label", script);
 		return true;
@@ -2498,7 +2543,7 @@ static bool Cmd_RestoreIP_Execute(COMMAND_ARGS)
 
 	ScriptRunner * runner = nullptr;
 	s32 * length = nullptr;
-	if(!GetStatementState(returnAddress, script, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
+	if(!GetStatementState(returnAddress, script, locals, scriptData, argsOffset, opcodeOffsetPtr, &runner, &length))
 	{
 		ReportUnfollowedJump("Goto", script);
 		return true;
@@ -2984,4 +3029,5 @@ void AddClassicCommands()
 	InstallUserFunctionBlock();
 	PlayerControls_Install();
 	InstallIsRunning();
+	InstallRunnerHooks();
 }
