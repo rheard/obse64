@@ -1583,6 +1583,10 @@ static bool Cmd_GetFirstRef_Execute(COMMAND_ARGS)
 	u32 includeDeleted = 0;
 	if(!ExtractArgs(EXTRACT_ARGS, &formType, &depth, &includeTaken, &includeDeleted)) return true;
 
+	// classic's depth when none is given, so a script giving it means the player's cell alone
+	if(depth == 0xFFFFFFFF)
+		depth = 0;
+
 	PlayerCharacter * player = PlayerCharacter::Get();
 	if(!script || !player || !player->parentCell) return true;
 
