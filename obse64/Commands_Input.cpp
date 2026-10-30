@@ -140,9 +140,18 @@ private:
 		m_requests.push_back({ keycode, type });
 	}
 
+	// A keycode as a key message writes it, and back: lParam's scan code with 0x80 for its extended
+	// bit (24), which is how DirectInput numbered the keys, but for the two sharing scan code 0x45.
+	// Windows marks NumLock's messages extended and Pause's not, the other way round from
+	// DirectInput (DIK_NUMLOCK 0x45, DIK_PAUSE 0xC5).
+	static u32 SwapNumLockAndPause(u32 keycode)
+	{
+		return ((keycode & 0x7F) == 0x45) ? (keycode ^ 0x80) : keycode;
+	}
+
 	// The key a keyboard or mouse button message is for, or kNumKeys for any other message. A
 	// keyboard message gives the scan code in bits 16 to 23 of lParam, with bit 24 set for the
-	// keys with an E0 prefix, which is how DirectInput numbered them.
+	// keys with an E0 prefix, much as DirectInput numbered them.
 	static u32 KeycodeForMessage(UINT msg, WPARAM wParam, LPARAM lParam, bool * down)
 	{
 		switch(msg)
@@ -165,7 +174,7 @@ private:
 				return kNumKeys;
 		}
 
-		return ((lParam >> 16) & 0x7F) | ((lParam & (1 << 24)) ? 0x80 : 0);
+		return SwapNumLockAndPause(((lParam >> 16) & 0x7F) | ((lParam & (1 << 24)) ? 0x80 : 0));
 	}
 
 	static LRESULT CALLBACK WindowProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -243,7 +252,8 @@ private:
 			return;
 		}
 
-		LPARAM lParam = 1 | (LPARAM(keycode & 0x7F) << 16) | ((keycode & 0x80) ? (1 << 24) : 0);
+		u32 scanKey = SwapNumLockAndPause(keycode);
+		LPARAM lParam = 1 | (LPARAM(scanKey & 0x7F) << 16) | ((scanKey & 0x80) ? (1 << 24) : 0);
 		if(!down)
 			lParam |= (LPARAM(1) << 30) | (LPARAM(1) << 31);
 
