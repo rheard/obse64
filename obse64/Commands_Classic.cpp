@@ -1359,8 +1359,16 @@ static CommandInfo kCommandInfo_UnequipItemNS =
 // GetFirstRef and GetNextRef walk the references in the player's cell, and in an exterior the
 // cells around it to a given depth, one matching reference per call, as classic did. A cell keeps
 // its references in the list at +0xB8. An exterior cell (flag 1 of +0x79 clear) has its grid
-// coordinates at +0xA0, and its worldspace finds a neighbour by them (0x06720A00, which only looks
-// in the worldspace's map of cells, so a cell the game hasn't made yet is skipped, not made).
+// coordinates behind the pointer at +0xA0, and its worldspace finds a neighbour by them
+// (0x06720A00, which only looks in the worldspace's map of cells, so a cell the game hasn't made
+// yet is skipped, not made).
+//
+// The scan reads a cell's list once, as it comes to the cell, and keeps its references' form IDs
+// rather than a place in the list: the game frees the list's nodes as references leave the cell,
+// and scripts move the references they're given, or go on with a scan in a later frame. Each
+// reference is looked up when its turn comes, and passed over if it's gone or has left the cell.
+// One that comes into a cell after the scan has read it isn't given, which also keeps a script
+// that places something for each reference it's given from never finishing.
 typedef TESObjectCELL * (* _TESWorldSpace_LookupCell)(TESWorldSpace * world, s32 x, s32 y);
 static RelocAddr <_TESWorldSpace_LookupCell> TESWorldSpace_LookupCell(0x06720A00);
 
@@ -1385,20 +1393,19 @@ enum
 
 struct CellRefScan
 {
-	using Node = BSSimpleList <TESObjectREFR *>::Node;
-
-	TESWorldSpace	* world;		// set for an exterior scan of the cells around the player's
-	s32				centerX;
-	s32				centerY;
-	s32				depth;
-	s32				dx;				// the cell being walked, from the centre
-	s32				dy;
-	TESObjectCELL	* cell;			// the cell being walked, none when the scan is done
-	Node			* next;			// the next node of its list to look at
-	u32				formType;
-	bool			includeTaken;
-	bool			includeDeleted;
-	u32				gameLoadCount;	// a scan started before a load would walk cells that are gone
+	TESWorldSpace		* world;		// set for an exterior scan of the cells around the player's
+	s32					centerX;
+	s32					centerY;
+	s32					depth;
+	s32					dx;				// the cell being walked, from the centre
+	s32					dy;
+	TESObjectCELL		* cell;			// the cell being walked, none when the scan is done
+	std::vector <u32>	refIDs;			// its references when the scan came to it
+	size_t				next;			// the next of them to look at
+	u32					formType;
+	bool				includeTaken;
+	bool				includeDeleted;
+	u32					gameLoadCount;	// a scan started before a load would look in cells that are gone
 };
 
 // one scan per script, as GetNextRef takes no arguments
@@ -1473,14 +1480,22 @@ static bool RefMatchesScan(const CellRefScan & scan, TESObjectREFR * refr)
 static void WalkCell(CellRefScan & scan, TESObjectCELL * cell)
 {
 	scan.cell = cell;
-	scan.next = &cell->objectList.node;
+	scan.refIDs.clear();
+	scan.next = 0;
+
+	for(auto * node = &cell->objectList.node; node; node = node->m_next)
+	{
+		if(node->m_data && node->m_data->refID)
+			scan.refIDs.push_back(node->m_data->refID);
+	}
 }
 
 // on to the next cell of the square around the centre that the game has made, row by row
 static void NextScanCell(CellRefScan & scan)
 {
 	scan.cell = nullptr;
-	scan.next = nullptr;
+	scan.refIDs.clear();
+	scan.next = 0;
 
 	if(!scan.world) return;
 
@@ -1523,19 +1538,18 @@ static void StartCellRefScan(CellRefScan & scan, TESObjectCELL * cell, u32 formT
 		WalkCell(scan, cell);
 }
 
-// The next matching reference, none once the scan is done. Like classic, the scan keeps its place
-// in a cell's list between calls, which suits a loop that runs within one frame.
+// the next matching reference still in the cell the scan found it in, none once the scan is done
 static TESObjectREFR * ContinueCellRefScan(CellRefScan & scan)
 {
 	while(scan.cell)
 	{
-		while(scan.next)
+		while(scan.next < scan.refIDs.size())
 		{
-			CellRefScan::Node * node = scan.next;
-			scan.next = node->m_next;
+			TESForm * form = LookupFormByID(scan.refIDs[scan.next++]);
+			auto * refr = form ? DYNAMIC_CAST(form, TESForm, TESObjectREFR) : nullptr;
 
-			if(node->m_data && RefMatchesScan(scan, node->m_data))
-				return node->m_data;
+			if(refr && refr->parentCell == scan.cell && RefMatchesScan(scan, refr))
+				return refr;
 		}
 
 		NextScanCell(scan);
