@@ -2071,7 +2071,7 @@ static bool Cmd_TestExpr_Execute(COMMAND_ARGS)
 // named arguments. Unreal turns each part's key into text, formats its arguments into it
 // (FText::Format: {name}, with ` before a brace that's meant), and joins the parts. A string
 // argument that is a key gets translated there, on Unreal's thread, where its string tables can
-// be read (docs/script-engine.md, "Messages"). 0x0655A5A0 adds a part with one string argument,
+// be read. 0x0655A5A0 adds a part with one string argument,
 // as the game does for a disease's name; 0x04722180 destroys the parts. The game's Message and
 // MessageBox show such a message as a notification (0x0656C6B0) and a message box (0x06568C40).
 struct UIMessage
