@@ -150,6 +150,7 @@ source_group(
 		Commands_MiscReference.cpp
 		Commands_Classic.cpp
 		Commands_Classic.h
+		Commands_Game.cpp
 		Commands_String.cpp
 		Commands_Events.cpp
 		Commands_Loops.cpp

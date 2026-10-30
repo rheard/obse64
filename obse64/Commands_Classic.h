@@ -23,6 +23,13 @@ bool IsFormType_Execute(COMMAND_ARGS, u8 typeID, const char * name, bool anyForm
 // (Commands_Inventory.cpp)
 void InstallItemMessageHook();
 
+// notes each save loaded and new game started, for GetGameLoaded (Commands_Game.cpp)
+void InstallGameLoadedHooks();
+
+// how many games have been loaded or started: a number that changes with each, for anything that
+// must not outlive the game it was made in (Commands_Game.cpp)
+u32 GetGameLoadCount();
+
 // whether a control (classic's number) is down in the game's controls
 bool IsControlDown(u32 control);
 
