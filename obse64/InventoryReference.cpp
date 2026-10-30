@@ -27,6 +27,35 @@ static s32 GetListCount(const ExtraDataList * list)
 	return xCount ? xCount->count : 1;
 }
 
+// how many of an item a container's base container holds (a leveled list is never the item)
+static s32 GetBaseCount(TESObjectREFR * container, TESForm * item)
+{
+	TESForm * baseForm = container->GetBaseForm();
+	auto * baseContainer = baseForm ? DYNAMIC_CAST(baseForm, TESForm, TESContainer) : nullptr;
+
+	s32 count = 0;
+	for(auto * node = baseContainer ? &baseContainer->list.node : nullptr; node; node = node->m_next)
+	{
+		if(node->m_data && node->m_data->type == item)
+			count += node->m_data->count;
+	}
+
+	return count;
+}
+
+// how many of an entry's items have no extra data list of their own
+static s32 GetUnlistedCount(TESObjectREFR * container, ExtraContainerChanges::Entry * entry)
+{
+	s32 count = GetBaseCount(container, entry->type) + entry->countDelta;
+	for(auto * node = entry->extraData ? &entry->extraData->node : nullptr; node; node = node->m_next)
+	{
+		if(node->m_data)
+			count -= GetListCount(node->m_data);
+	}
+
+	return count;
+}
+
 void GetInventoryStacks(TESObjectREFR * container, std::vector <InventoryStack> * out)
 {
 	out->clear();
@@ -216,6 +245,11 @@ ExtraDataList * GetInventoryRefList(TESObjectREFR * ref, bool create)
 
 	BaseExtraList::Locker lock;
 
+	// the items the new list is for, counted now: the script may have added or removed some since
+	// its loop came to the stack, and a list mustn't claim more than the entry has
+	s32 count = GetUnlistedCount(stack.container, stack.entry);
+	if(count <= 0) return nullptr;
+
 	if(!stack.entry->extraData)
 	{
 		auto * head = static_cast <BSSimpleList <ExtraDataList *> *>(GameHeap_Allocate(sizeof(BSSimpleList <ExtraDataList *>)));
@@ -231,14 +265,15 @@ ExtraDataList * GetInventoryRefList(TESObjectREFR * ref, bool create)
 
 	ExtraDataList * list = ExtraDataList_Construct(mem);
 
-	if(stack.count > 1)
+	if(count > 1)
 	{
 		if(void * countMem = GameHeap_Allocate(sizeof(ExtraCount)))
-			BaseExtraList_Add(list, ExtraCount_Construct(countMem, s16(std::min(stack.count, 0x7FFF))));
+			BaseExtraList_Add(list, ExtraCount_Construct(countMem, s16(std::min(count, 0x7FFF))));
 	}
 
 	BSSimpleList_AddFirst(stack.entry->extraData, list);
 	stack.list = list;
+	stack.count = count;
 
 	return list;
 }
