@@ -38,6 +38,25 @@ public:
 
 static_assert(sizeof(FString) == 0x10);
 
+// 18
+// a thread-safe shared reference to the text's data, then flags
+class FText
+{
+public:
+	void	* m_data;					// 00
+	u8		* m_referenceController;	// 08 shared count at +8, weak count at +0xC
+	u32		m_flags;					// 10
+	u32		pad14;						// 14
+
+	// what the text shows (FText::ToString, 0x00E63E60)
+	const FString * ToString() const;
+
+	// drops this reference to the text's data, as the destructor does
+	void Release();
+};
+
+static_assert(sizeof(FText) == 0x18);
+
 // size represents max allocation, actual instances are as short as possible
 class FNameEntry
 {

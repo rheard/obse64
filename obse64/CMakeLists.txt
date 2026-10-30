@@ -123,6 +123,8 @@ source_group(
 		CommandTable.h
 		ObseExpression.cpp
 		ObseExpression.h
+		FormatString.cpp
+		FormatString.h
 		FunctionScripts.cpp
 		FunctionScripts.h
 		InventoryReference.cpp

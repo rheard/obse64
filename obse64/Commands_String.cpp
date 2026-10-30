@@ -1,4 +1,5 @@
 #include "Commands_Classic.h"
+#include "FormatString.h"
 #include "CommandTable.h"
 #include "FunctionScripts.h"
 #include "GameConsole.h"

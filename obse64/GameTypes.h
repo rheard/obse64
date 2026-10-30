@@ -30,3 +30,21 @@ public:
 };
 
 static_assert(sizeof(BSStringT) == 0x10);
+
+// 20
+// the game's std::string, as the game reads one (MSVC's layout)
+struct GameStdString
+{
+	union
+	{
+		char		buf[16];	// 00
+		const char	* ptr;		// 00 once capacity passes 15
+	};
+	u64	size;		// 10
+	u64	capacity;	// 18
+};
+
+static_assert(sizeof(GameStdString) == 0x20);
+
+// text, as a std::string the game only reads; it points into text when longer than 15 characters
+GameStdString ToGameStdString(const char * text);
