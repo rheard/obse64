@@ -2,6 +2,14 @@
 
 xOBSE64's changes, release by release, newest first. Write each change up here as it's made, under the coming release's heading, so the release's notes are ready when it ships: a release's section becomes its notes on GitHub.
 
+## Unreleased
+
+The upcoming as yet to be versioned release.
+
+### What's new
+
+-
+
 ## 0.3.0
 
 The first release of xOBSE64, based on OBSE64 0.2.2, for the Steam version of Oblivion Remastered, 1.512.105.
